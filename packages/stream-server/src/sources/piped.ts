@@ -1,46 +1,48 @@
 /**
- * Invidious/Piped — YouTube proxy that bypasses bot detection.
- * Uses multiple public instances with automatic failover.
+ * Invidious — YouTube proxy that bypasses bot detection.
+ * Races all instances in parallel and uses the first one that responds.
+ * Falls back to yt-dlp if all instances fail.
  */
 
 import type { SearchResult, StreamInfo } from './types.js';
 
-// Public Invidious instances (more reliable than Piped currently)
+// Instances verified reachable from cloud (Render/US) as of 2026.
+// Check https://api.invidious.io/ for updated lists.
 const INVIDIOUS_INSTANCES = [
-  'https://iv.datura.network',
-  'https://invidious.privacyredirect.com',
-  'https://invidious.nerdvpn.de',
-  'https://inv.tux.pizza',
-  'https://invidious.io.lol',
+  'https://invidious.reallyaweso.me',
+  'https://invidious.fdn.fr',
+  'https://yt.cdaut.de',
+  'https://invidious.protokolla.fi',
+  'https://inv.nadeko.net',
   'https://invidious.perennialte.ch',
+  'https://invidious.io.lol',
 ];
 
+// Timeout per individual instance fetch (ms)
+const INSTANCE_TIMEOUT_MS = 8000;
+
+/**
+ * Race all instances — return the first successful response.
+ * Much faster than sequential: one working instance wins immediately
+ * instead of waiting for each dead one to time out.
+ */
 async function invidiousFetch<T>(path: string): Promise<T> {
-  let lastError: Error | null = null;
-
-  for (const base of INVIDIOUS_INSTANCES) {
-    try {
-      console.log(`[invidious] Trying instance: ${base}`);
-      const res = await fetch(`${base}${path}`, {
-        headers: { 'User-Agent': 'Nuclear/1.0' },
-        signal: AbortSignal.timeout(12000),
-      });
-      if (!res.ok) {
-        console.warn(`[invidious] ${base} returned ${res.status}`);
-        lastError = new Error(`${base} returned ${res.status}`);
-        continue;
-      }
-      console.log(`[invidious] Success with instance: ${base}`);
-      return (await res.json()) as T;
-    } catch (e) {
-      console.warn(`[invidious] ${base} failed:`, e);
-      lastError = e instanceof Error ? e : new Error(String(e));
-      continue;
+  const attempts = INVIDIOUS_INSTANCES.map(async (base) => {
+    const res = await fetch(`${base}${path}`, {
+      headers: { 'User-Agent': 'Nuclear/1.0' },
+      signal: AbortSignal.timeout(INSTANCE_TIMEOUT_MS),
+    });
+    if (!res.ok) {
+      throw new Error(`${base} returned ${res.status}`);
     }
-  }
+    return (await res.json()) as T;
+  });
 
-  console.error('[invidious] All instances failed, last error:', lastError);
-  throw lastError ?? new Error('All Invidious instances failed');
+  try {
+    return await Promise.any(attempts);
+  } catch {
+    throw new Error('All Invidious instances failed');
+  }
 }
 
 type InvidiousSearchResult = {
@@ -102,11 +104,9 @@ export async function streamPiped(videoId: string): Promise<StreamInfo> {
     `/api/v1/videos/${videoId}?fields=adaptiveFormats,formatStreams,lengthSeconds,title`,
   );
 
-  // Pick best audio-only stream
+  // Pick best audio-only adaptive stream by bitrate
   const audioStreams = (data.adaptiveFormats ?? [])
-    .filter(
-      (f) => f.type?.startsWith('audio/') && f.url && !f.type.includes('video'),
-    )
+    .filter((f) => f.type?.startsWith('audio/') && f.url)
     .sort((a, b) => (b.bitrate ?? 0) - (a.bitrate ?? 0));
 
   const best = audioStreams[0] ?? data.formatStreams?.[0];
