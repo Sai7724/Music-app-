@@ -2,7 +2,35 @@
  * yt-dlp wrapper using youtube-dl-exec.
  * This package auto-downloads the yt-dlp binary on first run.
  */
+import { writeFileSync, existsSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
 import { youtubeDl } from 'youtube-dl-exec';
+
+// Write YouTube cookies from env to a temp file once on startup
+let cookiesPath: string | undefined;
+
+const cookiesContent = process.env.YOUTUBE_COOKIES;
+if (cookiesContent) {
+  cookiesPath = join(tmpdir(), 'yt-cookies.txt');
+  try {
+    writeFileSync(cookiesPath, cookiesContent, 'utf-8');
+    console.log('[ytdlp] Cookies loaded from YOUTUBE_COOKIES env var');
+  } catch (e) {
+    console.error('[ytdlp] Failed to write cookies file:', e);
+    cookiesPath = undefined;
+  }
+} else {
+  console.warn('[ytdlp] No YOUTUBE_COOKIES set — may hit bot detection on cloud');
+}
+
+// Add cookies to any yt-dlp options if available
+function withCookies(opts: Record<string, unknown>): Record<string, unknown> {
+  if (cookiesPath && existsSync(cookiesPath)) {
+    return { ...opts, cookies: cookiesPath };
+  }
+  return opts;
+}
 
 export type SearchResult = {
   id: string;
@@ -43,14 +71,14 @@ export async function search(
   query: string,
   maxResults = 10,
 ): Promise<SearchResult[]> {
-  const output = await youtubeDl(`ytsearch${maxResults}:${query}`, {
+  const output = await youtubeDl(`ytsearch${maxResults}:${query}`, withCookies({
     dumpSingleJson: true,
     noWarnings: true,
     callHome: false,
     preferFreeFormats: true,
     skipDownload: true,
     flatPlaylist: true,
-  });
+  }) as Parameters<typeof youtubeDl>[1]);
 
   const data = output as { entries?: unknown[] };
   const entries: unknown[] = data.entries ?? [];
@@ -76,14 +104,14 @@ export async function getStream(urlOrId: string): Promise<StreamInfo> {
     ? urlOrId
     : `https://www.youtube.com/watch?v=${urlOrId}`;
 
-  const output = await youtubeDl(url, {
+  const output = await youtubeDl(url, withCookies({
     dumpSingleJson: true,
     noWarnings: true,
     callHome: false,
     preferFreeFormats: true,
     skipDownload: true,
     format: 'bestaudio[ext=m4a]/bestaudio/best',
-  });
+  }) as Parameters<typeof youtubeDl>[1]);
 
   const data = output as Record<string, unknown>;
 
@@ -108,13 +136,13 @@ export async function getStream(urlOrId: string): Promise<StreamInfo> {
 
 /** Fetch playlist metadata without downloading. */
 export async function getPlaylist(url: string): Promise<PlaylistInfo> {
-  const output = await youtubeDl(url, {
+  const output = await youtubeDl(url, withCookies({
     dumpSingleJson: true,
     noWarnings: true,
     callHome: false,
     flatPlaylist: true,
     skipDownload: true,
-  });
+  }) as Parameters<typeof youtubeDl>[1]);
 
   const data = output as Record<string, unknown>;
   const entries = (data.entries as Record<string, unknown>[] | undefined) ?? [];

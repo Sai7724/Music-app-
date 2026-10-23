@@ -15,16 +15,22 @@ import { useTranslation } from '@nuclearplayer/i18n';
 import type { Track } from '@nuclearplayer/model';
 import { pickArtwork } from '@nuclearplayer/model';
 
-import { ytdlpSearch, type YtdlpSearchResult } from '../native/streamApi';
+import { ytdlpSearch, type SearchResult } from '../native/streamApi';
 import { useFavoritesStore } from '../stores/favoritesStore';
 import { useQueueStore } from '../stores/queueStore';
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-const toTrack = (result: YtdlpSearchResult): Track => ({
+/**
+ * Convert a multi-source SearchResult into a Track.
+ * The composite id (e.g. "jiosaavn:abc123") is stored in source.id
+ * so MobileStreamResolver can route it to the right provider.
+ */
+const toTrack = (result: SearchResult): Track => ({
   title: result.title,
-  artists: result.channel ? [{ name: result.channel, roles: [] }] : [],
-  source: { provider: 'youtube', id: result.id },
+  artists: result.artist ? [{ name: result.artist, roles: [] }] : [],
+  // Store full composite id — resolver uses this to pick the right source
+  source: { provider: result.provider, id: result.id },
   durationMs: result.duration ? result.duration * 1000 : undefined,
   artwork: result.thumbnail
     ? { items: [{ url: result.thumbnail }] }

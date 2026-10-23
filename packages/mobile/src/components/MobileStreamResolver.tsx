@@ -21,8 +21,13 @@ const resolveStream = async (item: QueueItem): Promise<void> => {
   updateItemState(item.id, { status: 'loading', error: undefined });
 
   try {
-    // Get stream info from Render backend
-    const info = await ytdlpGetStream(null, item.track.source.id);
+    // Get stream info from Render backend — passes composite id + title
+    // Server tries all sources automatically (JioSaavn → Piped → yt-dlp)
+    const info = await ytdlpGetStream(
+      null,
+      item.track.source.id,
+      item.track.title,
+    );
 
     // Guard: if the current item changed while we were fetching, discard this result
     const current = useQueueStore.getState().getCurrentItem();
