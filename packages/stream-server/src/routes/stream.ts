@@ -6,18 +6,20 @@ import { resolveStream } from '../sources/resolver.js';
 
 export const streamRouter = Router();
 
-const querySchema = z.object({
-  // New format: "provider:id"  e.g. "youtube:dQw4w9WgXcQ"
-  id: z.string().min(1).max(200).optional(),
-  // Legacy: plain videoId (treated as YouTube)
-  videoId: z.string().min(1).max(64).optional(),
-  // Legacy: full URL
-  url: z.string().url().optional(),
-  // Optional title hint for cross-source fallback
-  title: z.string().max(200).optional(),
-}).refine((d) => d.id ?? d.videoId ?? d.url, {
-  message: 'Provide id, videoId, or url',
-});
+const querySchema = z
+  .object({
+    // New format: "provider:id"  e.g. "youtube:dQw4w9WgXcQ"
+    id: z.string().min(1).max(200).optional(),
+    // Legacy: plain videoId (treated as YouTube)
+    videoId: z.string().min(1).max(64).optional(),
+    // Legacy: full URL
+    url: z.string().url().optional(),
+    // Optional title hint for cross-source fallback
+    title: z.string().max(200).optional(),
+  })
+  .refine((d) => d.id ?? d.videoId ?? d.url, {
+    message: 'Provide id, videoId, or url',
+  });
 
 streamRouter.get('/', streamLimiter, async (req, res) => {
   const parsed = querySchema.safeParse(req.query);
@@ -26,7 +28,7 @@ streamRouter.get('/', streamLimiter, async (req, res) => {
     return;
   }
 
-  const { id, videoId, url, title } = parsed.data;
+  const { id, videoId, url } = parsed.data;
 
   // Normalise to composite id
   let compositeId: string;
@@ -46,7 +48,7 @@ streamRouter.get('/', streamLimiter, async (req, res) => {
   }
 
   try {
-    const info = await resolveStream(compositeId, title);
+    const info = await resolveStream(compositeId);
     res.json(info);
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
