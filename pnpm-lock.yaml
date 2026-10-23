@@ -741,6 +741,9 @@ importers:
       helmet:
         specifier: ^8.0.0
         version: 8.3.0
+      typescript:
+        specifier: ^5.4.0
+        version: 5.9.3
       undici:
         specifier: ^6.21.0
         version: 6.28.1
@@ -754,9 +757,6 @@ importers:
       tsx:
         specifier: ^4.19.4
         version: 4.23.15
-      typescript:
-        specifier: ^5.4.0
-        version: 5.9.3
 
   packages/tailwind-config:
     dependencies:
