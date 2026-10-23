@@ -2,10 +2,7 @@
  * yt-dlp wrapper using youtube-dl-exec.
  * This package auto-downloads the yt-dlp binary on first run.
  */
-import youtubeDlPkg from 'youtube-dl-exec';
-
-// youtube-dl-exec exports differently depending on module system
-const youtubeDl = (youtubeDlPkg as unknown as { default?: typeof youtubeDlPkg }).default ?? youtubeDlPkg;
+import { youtubeDl } from 'youtube-dl-exec';
 
 export type SearchResult = {
   id: string;
@@ -49,7 +46,7 @@ export async function search(
   const output = await youtubeDl(`ytsearch${maxResults}:${query}`, {
     dumpSingleJson: true,
     noWarnings: true,
-    noCallHome: true,
+    callHome: false,
     preferFreeFormats: true,
     skipDownload: true,
     flatPlaylist: true,
@@ -82,7 +79,7 @@ export async function getStream(urlOrId: string): Promise<StreamInfo> {
   const output = await youtubeDl(url, {
     dumpSingleJson: true,
     noWarnings: true,
-    noCallHome: true,
+    callHome: false,
     preferFreeFormats: true,
     skipDownload: true,
     format: 'bestaudio[ext=m4a]/bestaudio/best',
@@ -114,7 +111,7 @@ export async function getPlaylist(url: string): Promise<PlaylistInfo> {
   const output = await youtubeDl(url, {
     dumpSingleJson: true,
     noWarnings: true,
-    noCallHome: true,
+    callHome: false,
     flatPlaylist: true,
     skipDownload: true,
   });
