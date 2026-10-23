@@ -74,7 +74,7 @@ export async function search(
   const output = await youtubeDl(`ytsearch${maxResults}:${query}`, withCookies({
     dumpSingleJson: true,
     noWarnings: true,
-    callHome: false,
+    
     preferFreeFormats: true,
     skipDownload: true,
     flatPlaylist: true,
@@ -107,7 +107,7 @@ export async function getStream(urlOrId: string): Promise<StreamInfo> {
   const output = await youtubeDl(url, withCookies({
     dumpSingleJson: true,
     noWarnings: true,
-    callHome: false,
+    
     preferFreeFormats: true,
     skipDownload: true,
     format: 'bestaudio[ext=m4a]/bestaudio/best',
@@ -139,7 +139,7 @@ export async function getPlaylist(url: string): Promise<PlaylistInfo> {
   const output = await youtubeDl(url, withCookies({
     dumpSingleJson: true,
     noWarnings: true,
-    callHome: false,
+    
     flatPlaylist: true,
     skipDownload: true,
   }) as Parameters<typeof youtubeDl>[1]);
