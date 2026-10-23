@@ -97,8 +97,7 @@ export async function searchPiped(
         artist: item.author ?? null,
         provider: 'youtube' as const,
       }));
-  } catch (e) {
-    console.warn('[invidious] search failed:', e);
+  } catch {
     return [];
   }
 }

@@ -112,19 +112,31 @@ export async function getStream(urlOrId: string): Promise<StreamInfo> {
   console.log('[ytdlp] Getting stream for:', url);
 
   // Multi-tier fallback strategy:
-  // 1. If cookies are configured in env, try with cookies.
-  // 2. If cookies fail (common when YOUTUBE_COOKIES env var has expired session),
-  //    retry cleanly without cookies.
-  // 3. Retry with android client profile (bypasses web bot checks without cookies).
-  // 4. Retry with ios client profile.
-  // 5. Retry with embed URL (often bypasses bot detection).
-  // 6. Retry with mweb client profile.
-  // 7. Final fallback with relaxed format 'bestaudio/best'.
+  // Multi-tier fallback strategy:
+  // 1. Android client profile (android,web) — primary strategy for cloud servers (Render/AWS/GCP).
+  //    Bypasses datacenter IP bot detection ("Sign in to confirm you're not a bot") without needing cookies.
+  // 2. Cookies (if YOUTUBE_COOKIES env var is set, e.g. for age-restricted content).
+  // 3. iOS client profile.
+  // 4. Default web client without cookies.
+  // 5. Embed URL fallback.
   const attempts: Array<{
     name: string;
     opts: Record<string, unknown>;
     url?: string;
-  }> = [];
+  }> = [
+    {
+      name: 'android-client',
+      opts: {
+        dumpSingleJson: true,
+        noWarnings: true,
+        preferFreeFormats: true,
+        skipDownload: true,
+        format: 'bestaudio/best',
+        extractorArgs: 'youtube:player_client=android,web',
+        ignoreErrors: true,
+      },
+    },
+  ];
 
   if (cookiesPath && existsSync(cookiesPath)) {
     attempts.push({
@@ -143,29 +155,6 @@ export async function getStream(urlOrId: string): Promise<StreamInfo> {
 
   attempts.push(
     {
-      name: 'default-no-cookies',
-      opts: {
-        dumpSingleJson: true,
-        noWarnings: true,
-        preferFreeFormats: true,
-        skipDownload: true,
-        format: 'bestaudio/best',
-        ignoreErrors: true,
-      },
-    },
-    {
-      name: 'android-client',
-      opts: {
-        dumpSingleJson: true,
-        noWarnings: true,
-        preferFreeFormats: true,
-        skipDownload: true,
-        format: 'bestaudio/best',
-        extractorArgs: 'youtube:player_client=android',
-        ignoreErrors: true,
-      },
-    },
-    {
       name: 'ios-client',
       opts: {
         dumpSingleJson: true,
@@ -178,8 +167,7 @@ export async function getStream(urlOrId: string): Promise<StreamInfo> {
       },
     },
     {
-      name: 'embed-url',
-      url: url.replace('watch?v=', 'embed/'),
+      name: 'default-no-cookies',
       opts: {
         dumpSingleJson: true,
         noWarnings: true,
@@ -190,14 +178,14 @@ export async function getStream(urlOrId: string): Promise<StreamInfo> {
       },
     },
     {
-      name: 'mweb-client',
+      name: 'embed-url',
+      url: url.replace('watch?v=', 'embed/'),
       opts: {
         dumpSingleJson: true,
         noWarnings: true,
         preferFreeFormats: true,
         skipDownload: true,
         format: 'bestaudio/best',
-        extractorArgs: 'youtube:player_client=mweb',
         ignoreErrors: true,
       },
     },
