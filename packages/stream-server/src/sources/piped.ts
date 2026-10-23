@@ -1,28 +1,32 @@
 /**
- * Piped — YouTube proxy that bypasses bot detection.
- * Uses public Piped instances, no auth needed.
- * https://github.com/TeamPiped/Piped
+ * Invidious/Piped — YouTube proxy that bypasses bot detection.
+ * Uses multiple public instances with automatic failover.
  */
 
 import type { SearchResult, StreamInfo } from './types.js';
 
-// Public Piped instances — we try them in order
-const PIPED_INSTANCES = [
-  'https://pipedapi.kavin.rocks',
-  'https://piped-api.garudalinux.org',
-  'https://api.piped.yt',
+// Public Invidious instances (more reliable than Piped currently)
+const INVIDIOUS_INSTANCES = [
+  'https://invidious.privacyredirect.com',
+  'https://invidious.fdn.fr',
+  'https://inv.nadeko.net',
+  'https://invidious.nerdvpn.de',
+  'https://yt.cdaut.de',
 ];
 
-async function pipedFetch<T>(path: string): Promise<T> {
+async function invidiousFetch<T>(path: string): Promise<T> {
   let lastError: Error | null = null;
 
-  for (const base of PIPED_INSTANCES) {
+  for (const base of INVIDIOUS_INSTANCES) {
     try {
       const res = await fetch(`${base}${path}`, {
         headers: { 'User-Agent': 'Nuclear/1.0' },
         signal: AbortSignal.timeout(8000),
       });
-      if (!res.ok) continue;
+      if (!res.ok) {
+        lastError = new Error(`${base} returned ${res.status}`);
+        continue;
+      }
       return await res.json() as T;
     } catch (e) {
       lastError = e instanceof Error ? e : new Error(String(e));
@@ -30,68 +34,86 @@ async function pipedFetch<T>(path: string): Promise<T> {
     }
   }
 
-  throw lastError ?? new Error('All Piped instances failed');
+  throw lastError ?? new Error('All Invidious instances failed');
 }
+
+type InvidiousSearchResult = {
+  type?: string;
+  videoId?: string;
+  title?: string;
+  lengthSeconds?: number;
+  videoThumbnails?: Array<{ quality?: string; url?: string }>;
+  author?: string;
+};
+
+type InvidiousVideoInfo = {
+  adaptiveFormats?: Array<{
+    type?: string;
+    url?: string;
+    bitrate?: number;
+    audioSampleRate?: number;
+    itag?: number;
+  }>;
+  formatStreams?: Array<{
+    url?: string;
+    itag?: number;
+  }>;
+  lengthSeconds?: number;
+  title?: string;
+};
 
 export async function searchPiped(
   query: string,
   limit = 10,
 ): Promise<SearchResult[]> {
   try {
-    const data = await pipedFetch<{
-      items?: Array<{
-        url?: string;
-        title?: string;
-        duration?: number;
-        thumbnail?: string;
-        uploaderName?: string;
-        type?: string;
-      }>;
-    }>(`/search?q=${encodeURIComponent(query)}&filter=music_songs`);
+    const data = await invidiousFetch<InvidiousSearchResult[]>(
+      `/api/v1/search?q=${encodeURIComponent(query)}&type=video&fields=videoId,title,lengthSeconds,videoThumbnails,author,type`,
+    );
 
-    return (data.items ?? [])
-      .filter((item) => item.type === 'stream' && item.url)
+    return data
+      .filter((item) => item.type === 'video' && item.videoId)
       .slice(0, limit)
-      .map((item) => {
-        const videoId = item.url?.replace('/watch?v=', '') ?? '';
-        return {
-          id: `youtube:${videoId}`,
-          title: item.title ?? '',
-          duration: item.duration ?? null,
-          thumbnail: item.thumbnail ?? null,
-          artist: item.uploaderName ?? null,
-          provider: 'youtube' as const,
-        };
-      });
+      .map((item) => ({
+        id: `youtube:${item.videoId}`,
+        title: item.title ?? '',
+        duration: item.lengthSeconds ?? null,
+        thumbnail:
+          item.videoThumbnails?.find((t) => t.quality === 'medium')?.url ??
+          item.videoThumbnails?.[0]?.url ??
+          null,
+        artist: item.author ?? null,
+        provider: 'youtube' as const,
+      }));
   } catch (e) {
-    console.warn('[piped] search failed:', e);
+    console.warn('[invidious] search failed:', e);
     return [];
   }
 }
 
 export async function streamPiped(videoId: string): Promise<StreamInfo> {
-  const data = await pipedFetch<{
-    audioStreams?: Array<{
-      url?: string;
-      bitrate?: number;
-      mimeType?: string;
-    }>;
-    duration?: number;
-    title?: string;
-  }>(`/streams/${videoId}`);
+  const data = await invidiousFetch<InvidiousVideoInfo>(
+    `/api/v1/videos/${videoId}?fields=adaptiveFormats,formatStreams,lengthSeconds,title`,
+  );
 
-  // Pick highest bitrate audio stream
-  const streams = (data.audioStreams ?? [])
-    .filter((s) => s.url)
+  // Pick best audio-only stream
+  const audioStreams = (data.adaptiveFormats ?? [])
+    .filter(
+      (f) =>
+        f.type?.startsWith('audio/') &&
+        f.url &&
+        !f.type.includes('video'),
+    )
     .sort((a, b) => (b.bitrate ?? 0) - (a.bitrate ?? 0));
 
-  const best = streams[0];
-  if (!best?.url) throw new Error('No audio stream from Piped');
+  const best = audioStreams[0] ?? data.formatStreams?.[0];
+
+  if (!best?.url) throw new Error('Invidious: no audio stream found');
 
   return {
     stream_url: best.url,
-    duration: data.duration ? data.duration * 1000 : null,
+    duration: data.lengthSeconds ? data.lengthSeconds * 1000 : null,
     title: data.title ?? null,
-    provider: 'piped',
+    provider: 'invidious',
   };
 }

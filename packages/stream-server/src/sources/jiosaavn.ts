@@ -1,76 +1,102 @@
 /**
- * JioSaavn — unofficial API, no auth, 320kbps streams.
- * Huge Hindi + English library.
+ * JioSaavn — calls JioSaavn's internal API directly.
+ * No third-party instance needed. 320kbps DRM-free streams.
  */
 
 import type { SearchResult, StreamInfo } from './types.js';
 
-const BASE = 'https://saavn.dev/api';
+// JioSaavn's internal web API — same endpoint their website uses
+const BASE = 'https://www.jiosaavn.com/api.php';
 
-async function saavnFetch<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    headers: { 'User-Agent': 'Nuclear/1.0' },
-    signal: AbortSignal.timeout(8000),
+async function jioFetch<T>(params: Record<string, string>): Promise<T> {
+  const query = new URLSearchParams({
+    _format: 'json',
+    _marker: '0',
+    api_version: '4',
+    ctx: 'web6dot0',
+    ...params,
   });
-  if (!res.ok) throw new Error(`JioSaavn ${res.status}`);
+
+  const res = await fetch(`${BASE}?${query}`, {
+    headers: {
+      'User-Agent':
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      Referer: 'https://www.jiosaavn.com/',
+      Accept: 'application/json',
+    },
+    signal: AbortSignal.timeout(10000),
+  });
+
+  if (!res.ok) throw new Error(`JioSaavn HTTP ${res.status}`);
   return res.json() as Promise<T>;
 }
 
-type SaavnSong = {
+// Decode the encrypted download URL JioSaavn returns
+function decodeUrl(encoded: string): string {
+  try {
+    // JioSaavn encodes URLs with a simple substitution cipher
+    const key = '38346591';
+    let decoded = '';
+    for (let i = 0; i < encoded.length; i++) {
+      decoded += String.fromCharCode(
+        encoded.charCodeAt(i) ^ key.charCodeAt(i % key.length),
+      );
+    }
+    return atob(decoded);
+  } catch {
+    // If decode fails, return as-is (some URLs are plain)
+    return encoded;
+  }
+}
+
+// Replace low-quality URL with 320kbps
+function toHighQuality(url: string): string {
+  return url
+    .replace('_96.mp4', '_320.mp4')
+    .replace('_160.mp4', '_320.mp4')
+    .replace('_48.mp4', '_320.mp4')
+    .replace('http://', 'https://');
+}
+
+type JioSong = {
   id?: string;
-  name?: string;
-  duration?: number | string;
-  image?: Array<{ quality?: string; url?: string }>;
-  artists?: { primary?: Array<{ name?: string }> };
-  downloadUrl?: Array<{ quality?: string; url?: string }>;
+  song?: string;
+  title?: string;
+  duration?: string | number;
+  image?: string;
+  primary_artists?: string;
+  encrypted_media_url?: string;
+  media_url?: string;
+  '320kbps'?: string;
 };
 
-type SaavnSearchResponse = {
-  data?: {
-    results?: SaavnSong[];
+type JioSearchResponse = {
+  songs?: {
+    data?: JioSong[];
   };
 };
-
-type SaavnSongResponse = {
-  data?: SaavnSong[];
-};
-
-function pickImage(images?: SaavnSong['image']): string | null {
-  if (!images?.length) return null;
-  // prefer 500x500
-  return (
-    images.find((i) => i.quality === '500x500')?.url ??
-    images[images.length - 1]?.url ??
-    null
-  );
-}
-
-function pickDownloadUrl(urls?: SaavnSong['downloadUrl']): string | null {
-  if (!urls?.length) return null;
-  // prefer 320kbps
-  return (
-    urls.find((u) => u.quality === '320kbps')?.url ??
-    urls.find((u) => u.quality === '160kbps')?.url ??
-    urls[urls.length - 1]?.url ??
-    null
-  );
-}
 
 export async function searchJioSaavn(
   query: string,
   limit = 10,
 ): Promise<SearchResult[]> {
   try {
-    const data = await saavnFetch<SaavnSearchResponse>(
-      `/search/songs?query=${encodeURIComponent(query)}&limit=${limit}`,
-    );
+    const data = await jioFetch<JioSearchResponse>({
+      __call: 'autocomplete.get',
+      query: query,
+      includeMetaTags: '0',
+    });
 
-    return (data.data?.results ?? []).map((song) => ({
+    const songs = data.songs?.data ?? [];
+
+    return songs.slice(0, limit).map((song) => ({
       id: `jiosaavn:${song.id ?? ''}`,
-      title: song.name ?? '',
+      title: song.song ?? song.title ?? '',
       duration: song.duration ? Number(song.duration) : null,
-      thumbnail: pickImage(song.image),
-      artist: song.artists?.primary?.[0]?.name ?? null,
+      thumbnail: song.image
+        ? song.image.replace('150x150', '500x500')
+        : null,
+      artist: song.primary_artists ?? null,
       provider: 'jiosaavn' as const,
     }));
   } catch (e) {
@@ -80,20 +106,34 @@ export async function searchJioSaavn(
 }
 
 export async function streamJioSaavn(songId: string): Promise<StreamInfo> {
-  const data = await saavnFetch<SaavnSongResponse>(
-    `/songs?id=${encodeURIComponent(songId)}`,
-  );
+  const data = await jioFetch<{ songs?: JioSong[] } | JioSong[]>({
+    __call: 'song.getDetails',
+    pids: songId,
+  });
 
-  const song = data.data?.[0];
+  const songs = Array.isArray(data) ? data : (data.songs ?? [data as JioSong]);
+  const song = songs[0] as JioSong;
+
   if (!song) throw new Error('JioSaavn: song not found');
 
-  const url = pickDownloadUrl(song.downloadUrl);
-  if (!url) throw new Error('JioSaavn: no download URL');
+  // Get stream URL — try encrypted first, then plain
+  let url = song.encrypted_media_url
+    ? toHighQuality(decodeUrl(song.encrypted_media_url))
+    : song.media_url
+      ? toHighQuality(song.media_url)
+      : null;
+
+  if (!url) throw new Error('JioSaavn: no stream URL found');
+
+  // If 320kbps is available, use it directly
+  if (song['320kbps'] === 'true' || song['320kbps'] === true as unknown as string) {
+    url = toHighQuality(url);
+  }
 
   return {
     stream_url: url,
     duration: song.duration ? Number(song.duration) * 1000 : null,
-    title: song.name ?? null,
+    title: song.song ?? song.title ?? null,
     provider: 'jiosaavn',
   };
 }
