@@ -2,7 +2,10 @@
  * yt-dlp wrapper using youtube-dl-exec.
  * This package auto-downloads the yt-dlp binary on first run.
  */
-import youtubeDl from 'youtube-dl-exec';
+import youtubeDlPkg from 'youtube-dl-exec';
+
+// youtube-dl-exec exports differently depending on module system
+const youtubeDl = (youtubeDlPkg as unknown as { default?: typeof youtubeDlPkg }).default ?? youtubeDlPkg;
 
 export type SearchResult = {
   id: string;
