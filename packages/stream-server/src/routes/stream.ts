@@ -28,27 +28,33 @@ streamRouter.get('/', streamLimiter, async (req, res) => {
     return;
   }
 
-  const { id, videoId, url } = parsed.data;
+  const { id, videoId, url, title } = parsed.data;
 
   // Normalise to composite id
   let compositeId: string;
   if (id) {
     compositeId = id;
   } else if (videoId) {
-    compositeId = `youtube:${videoId}`;
-  } else {
-    // Extract YouTube video ID from URL
-    try {
-      const u = new URL(url!);
-      const v = u.searchParams.get('v') ?? u.pathname.replace('/', '');
-      compositeId = `youtube:${v}`;
-    } catch {
-      compositeId = `youtube:${url}`;
+    compositeId = videoId.includes(':') ? videoId : `youtube:${videoId}`;
+  } else if (url) {
+    if (url.startsWith('youtube:')) {
+      compositeId = url;
+    } else {
+      try {
+        const u = new URL(url);
+        const v = u.searchParams.get('v') ?? u.pathname.replace(/^\//, '');
+        compositeId = `youtube:${v}`;
+      } catch {
+        compositeId = `youtube:${url}`;
+      }
     }
+  } else {
+    res.status(400).json({ error: 'Provide id, videoId, or url' });
+    return;
   }
 
   try {
-    const info = await resolveStream(compositeId);
+    const info = await resolveStream(compositeId, title);
     res.json(info);
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
