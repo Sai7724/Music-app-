@@ -1,70 +1,11 @@
-<p align="center">
-  <picture>
-    <source alt="Nuclear Music Player"  srcset="packages/docs/.gitbook/assets/readme-banner.png">
-    <img alt="Nuclear Music Player"  srcset="packages/docs/.gitbook/assets/readme-banner.png">
-  </picture>
-
-
-</p>
-
 <div align="center">
 
-# Nuclear 
+# Nuclear
+
+Nuclear is a free, open-source music player without ads or tracking. Search for any song or artist, build playlists, and start listening.  
+Runs on Windows, macOS, and Linux.
 
 </div>
-
-<div align="center">
-
-  Nuclear is a free, open-source music player without ads or tracking. Search for any song or artist, build playlists, and start listening.<br>
-  Runs on Windows, macOS, and Linux.
-  
-</div>
-
-## Screenshots
-
-<p align="center">
-  <img src="packages/docs/.gitbook/assets/dashboard-main.png" alt="Nuclear Music Player - Dashboard" width="100%">
-</p>
-
-Nuclear comes with multiple built-in themes, with light and a dark modes:
-
-<p align="center">
-  <img src="packages/docs/.gitbook/assets/dashboard-aurora-light.png" alt="Aurora theme, light mode" width="32%">
-  <img src="packages/docs/.gitbook/assets/dashboard-ember-light.png" alt="Ember theme, light mode" width="32%">
-  <img src="packages/docs/.gitbook/assets/dashboard-lagoon-light.png" alt="Lagoon theme, light mode" width="32%">
-</p>
-<p align="center">
-  <img src="packages/docs/.gitbook/assets/dashboard-default-dark.png" alt="Default theme, dark mode" width="32%">
-  <img src="packages/docs/.gitbook/assets/dashboard-lagoon-dark.png" alt="Lagoon theme, dark mode" width="32%">
-  <img src="packages/docs/.gitbook/assets/dashboard-arctic-moss-dark.png" alt="Arctic Moss theme, dark mode" width="32%">
-</p>
-
-| | |
-|:---:|:---:|
-| ![Search artists](packages/docs/.gitbook/assets/search-artists.png) | ![Search albums](packages/docs/.gitbook/assets/search-albums.png) |
-| Artist search | Album search |
-| ![Search tracks](packages/docs/.gitbook/assets/search-tracks.png) | ![Artist page](packages/docs/.gitbook/assets/artist.png) |
-| Track search with recent searches | Artist page |
-| ![Album page](packages/docs/.gitbook/assets/album.png) | ![Favorite artists](packages/docs/.gitbook/assets/favorite-artists.png) |
-| Album page | Favorites |
-| ![Playlists](packages/docs/.gitbook/assets/playlists.png) | ![Playlist](packages/docs/.gitbook/assets/playlist-detail-view.png) |
-| Playlists | Playlist |
-| ![Synced lyrics](packages/docs/.gitbook/assets/lyrics.png) | ![Lyrics with furigana and translations](packages/docs/.gitbook/assets/lyrics-translations.png) |
-| Synced lyrics | Lyrics with furigana and translations |
-| ![Listening history](packages/docs/.gitbook/assets/history.png) | ![Listening stats](packages/docs/.gitbook/assets/history-stats.png) |
-| Listening history | Listening stats |
-| ![Stream sources](packages/docs/.gitbook/assets/stream-candidates.png) | ![Plugin store](packages/docs/.gitbook/assets/plugin-store.png) |
-| Stream sources for a queued track | Plugin store |
-| ![Installed plugins](packages/docs/.gitbook/assets/installed-plugins.png) | ![Preferences](packages/docs/.gitbook/assets/preferences.png) |
-| Installed plugins | Preferences |
-| ![What's new](packages/docs/.gitbook/assets/whats-new.png) | ![Log viewer](packages/docs/.gitbook/assets/log-viewer.png) |
-| What's new | Log viewer |
-
-Control Nuclear from your phone with Nuclear Jam:
-
-<p align="center">
-  <img src="packages/docs/.gitbook/assets/jam-remote.png" alt="Nuclear Jam remote control on a phone" width="300">
-</p>
 
 ## Download
 
