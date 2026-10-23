@@ -119,60 +119,117 @@ export async function getStream(urlOrId: string): Promise<StreamInfo> {
   const formatString =
     'bestaudio[ext=webm][acodec=opus]/bestaudio[ext=m4a]/bestaudio/best';
 
-  const baseOpts: Record<string, unknown> = {
-    dumpSingleJson: true,
-    noWarnings: true,
-    preferFreeFormats: true,
-    skipDownload: true,
-    format: formatString,
-    // Use the TV client — doesn't require po-token or cookies on server IPs.
-    // 'tv' is the YouTube TV (Leanback) client which has less bot detection
-    // than web/android on cloud server IP ranges.
-    // player_skip=webpage,configs avoids loading the JS player (faster + less
-    // likely to trigger bot checks).
-    extractorArgs: 'youtube:player_client=tv,mweb;player_skip=webpage,configs',
-    // Do not abort on minor errors (e.g. geo-restricted subtitle tracks)
-    ignoreErrors: true,
-  };
+  // Multi-tier fallback strategy:
+  // 1. If cookies are configured in env, try with cookies.
+  // 2. If cookies fail (common when YOUTUBE_COOKIES env var has expired session,
+  //    causing YouTube to return "The page needs to be reloaded"), retry cleanly without cookies.
+  // 3. Retry with android client profile (bypasses web bot checks without cookies).
+  // 4. Retry with ios client profile.
+  // 5. Retry with relaxed format 'bestaudio/best'.
+  const attempts: Array<{ name: string; opts: Record<string, unknown> }> = [];
 
-  try {
-    const output = await youtubeDl(
-      url,
-      withCookies(baseOpts) as Parameters<typeof youtubeDl>[1],
-    );
-
-    const data = output as Record<string, unknown>;
-
-    const formats = data.requested_formats as
-      Record<string, unknown>[] | undefined;
-    const streamUrl =
-      (formats?.[0]?.url as string | undefined) ??
-      (data.url as string | undefined) ??
-      '';
-
-    if (!streamUrl) {
-      console.error('[ytdlp] No stream URL in response:', data);
-      throw new Error(`yt-dlp returned no stream URL for ${urlOrId}`);
-    }
-
-    console.log('[ytdlp] Successfully got stream URL');
-
-    return {
-      stream_url: streamUrl,
-      duration: typeof data.duration === 'number' ? data.duration * 1000 : null,
-      title: typeof data.title === 'string' ? data.title : null,
-      container: resolveContainer(data, formats),
-      codec: resolveCodec(data, formats),
-      album: typeof data.album === 'string' ? data.album : null,
-      artists: parseStringArray(data.artists),
-      album_artists: parseStringArray(data.album_artists),
-      upload_date:
-        typeof data.upload_date === 'string' ? data.upload_date : null,
-    };
-  } catch (error) {
-    console.error('[ytdlp] Failed to get stream:', error);
-    throw error;
+  if (cookiesPath && existsSync(cookiesPath)) {
+    attempts.push({
+      name: 'cookies',
+      opts: {
+        dumpSingleJson: true,
+        noWarnings: true,
+        preferFreeFormats: true,
+        skipDownload: true,
+        format: formatString,
+        ignoreErrors: true,
+        cookies: cookiesPath,
+      },
+    });
   }
+
+  attempts.push(
+    {
+      name: 'default-no-cookies',
+      opts: {
+        dumpSingleJson: true,
+        noWarnings: true,
+        preferFreeFormats: true,
+        skipDownload: true,
+        format: formatString,
+        ignoreErrors: true,
+      },
+    },
+    {
+      name: 'android-client',
+      opts: {
+        dumpSingleJson: true,
+        noWarnings: true,
+        preferFreeFormats: true,
+        skipDownload: true,
+        format: 'bestaudio/best',
+        extractorArgs: 'youtube:player_client=android',
+        ignoreErrors: true,
+      },
+    },
+    {
+      name: 'ios-client',
+      opts: {
+        dumpSingleJson: true,
+        noWarnings: true,
+        preferFreeFormats: true,
+        skipDownload: true,
+        format: 'bestaudio/best',
+        extractorArgs: 'youtube:player_client=ios',
+        ignoreErrors: true,
+      },
+    },
+  );
+
+  let lastError: Error | null = null;
+
+  for (const attempt of attempts) {
+    try {
+      console.log(`[ytdlp] Trying ${attempt.name} for:`, url);
+      const output = await youtubeDl(
+        url,
+        attempt.opts as Parameters<typeof youtubeDl>[1],
+      );
+
+      const data = output as Record<string, unknown>;
+
+      const formats = data.requested_formats as
+        Record<string, unknown>[] | undefined;
+      const streamUrl =
+        (formats?.[0]?.url as string | undefined) ??
+        (data.url as string | undefined) ??
+        '';
+
+      if (streamUrl) {
+        console.log(`[ytdlp] Successfully got stream URL via ${attempt.name}`);
+
+        return {
+          stream_url: streamUrl,
+          duration:
+            typeof data.duration === 'number' ? data.duration * 1000 : null,
+          title: typeof data.title === 'string' ? data.title : null,
+          container: resolveContainer(data, formats),
+          codec: resolveCodec(data, formats),
+          album: typeof data.album === 'string' ? data.album : null,
+          artists: parseStringArray(data.artists),
+          album_artists: parseStringArray(data.album_artists),
+          upload_date:
+            typeof data.upload_date === 'string' ? data.upload_date : null,
+        };
+      }
+
+      console.warn(`[ytdlp] ${attempt.name} returned no stream URL for ${url}`);
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      const msg = (lastError.message || '').split('\n')[0];
+      console.warn(`[ytdlp] ${attempt.name} failed for ${url}:`, msg);
+    }
+  }
+
+  console.error('[ytdlp] All extraction attempts failed for:', url);
+  throw (
+    lastError ?? new Error(`yt-dlp could not resolve stream for ${urlOrId}`)
+  );
 }
 
 /** Fetch playlist metadata without downloading. */

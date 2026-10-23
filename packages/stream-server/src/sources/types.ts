@@ -14,4 +14,10 @@ export type StreamInfo = {
   duration: number | null; // ms
   title: string | null;
   provider: string;
+  container?: string | null;
+  codec?: string | null;
+  album?: string | null;
+  artists?: string[];
+  album_artists?: string[];
+  upload_date?: string | null;
 };

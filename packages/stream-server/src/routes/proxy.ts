@@ -99,14 +99,24 @@ async function proxyUpstream(
     }
 
     const reader = upstream.body.getReader();
-    while (true) {
+    let clientDisconnected = false;
+
+    req.on('close', () => {
+      clientDisconnected = true;
+      reader.cancel().catch(() => {});
+    });
+
+    while (!clientDisconnected) {
       const { done, value } = await reader.read();
-      if (done) {
+      if (done || clientDisconnected) {
         break;
       }
       res.write(Buffer.from(value));
     }
-    res.end();
+
+    if (!res.writableEnded) {
+      res.end();
+    }
   } catch (err) {
     console.error('Proxy error:', err);
     if (!res.headersSent) {

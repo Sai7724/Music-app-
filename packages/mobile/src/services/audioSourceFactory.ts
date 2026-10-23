@@ -33,6 +33,21 @@ function toMseCodec(stream: ResolvedStream): string | null {
   return null;
 }
 
+/**
+ * Check if the browser's MediaSource API supports the given codec string.
+ * Returns false if MSE is not available (e.g. some mobile WebViews).
+ */
+function isMseSupported(codecString: string): boolean {
+  try {
+    if (typeof MediaSource === 'undefined') {
+      return false;
+    }
+    return MediaSource.isTypeSupported(codecString);
+  } catch {
+    return false;
+  }
+}
+
 export class MobileAudioSourceFactory {
   fromCandidate(candidate: StreamCandidate): AudioSource {
     const { stream } = candidate;
@@ -70,13 +85,24 @@ export class MobileAudioSourceFactory {
     // Use MSE (Media Source Extensions) for fMP4 and WebM/opus — these
     // require the browser to know the codec upfront to decode correctly.
     // Plain MP3/AAC files can play via the <audio> src attribute directly.
-    if (mseCodec && durationMs) {
+    // BUT: only use MSE if the browser actually supports it — some mobile
+    // WebViews lack MSE support for certain codecs.
+    if (mseCodec && durationMs && isMseSupported(mseCodec)) {
+      console.log('[audioSourceFactory] Using MSE with codec:', mseCodec);
       return {
         url: proxyUrl,
         protocol: 'mse',
         durationSeconds: durationMs / 1000,
         codec: mseCodec,
       };
+    }
+
+    if (mseCodec && durationMs) {
+      console.warn(
+        '[audioSourceFactory] MSE not supported for codec:',
+        mseCodec,
+        '— falling back to plain http',
+      );
     }
 
     // Fallback: plain http (works for mp3, aac, ogg in most WebViews)

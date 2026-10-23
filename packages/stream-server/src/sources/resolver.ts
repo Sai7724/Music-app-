@@ -1,7 +1,7 @@
 /**
  * Unified multi-source resolver.
  *
- * Search: queries all sources in parallel, merges results.
+ * Search: queries sources in parallel, merges results.
  * Stream: tries sources in priority order, returns first success.
  */
 
@@ -10,7 +10,6 @@ import {
   search as ytdlpSearch,
 } from '../ytdlp.js';
 import { searchPiped, streamPiped } from './piped.js';
-import { searchSoundCloud, streamSoundCloud } from './soundcloud.js';
 import type { SearchResult, StreamInfo } from './types.js';
 
 // ── Search ────────────────────────────────────────────────────────────────────
@@ -21,7 +20,7 @@ export async function searchAll(
 ): Promise<SearchResult[]> {
   const perSource = Math.ceil(limit / 2);
 
-  const [ytResults, pipedResults, scResults] = await Promise.allSettled([
+  const [ytResults, pipedResults] = await Promise.allSettled([
     ytdlpSearch(query, perSource).then((r) =>
       r.map((item) => ({
         id: `youtube:${item.id}`,
@@ -33,7 +32,6 @@ export async function searchAll(
       })),
     ),
     searchPiped(query, perSource),
-    searchSoundCloud(query, Math.floor(perSource / 2)),
   ]);
 
   const all: SearchResult[] = [];
@@ -50,19 +48,10 @@ export async function searchAll(
     }
   }
 
-  if (scResults.status === 'fulfilled') {
-    for (const r of scResults.value) {
-      if (!isDuplicate(r, all)) {
-        all.push(r);
-      }
-    }
-  }
-
   console.log(
     `[search] "${query}" → ${all.length} results`,
     `(yt: ${ytResults.status === 'fulfilled' ? ytResults.value.length : 'err'},`,
-    `piped: ${pipedResults.status === 'fulfilled' ? pipedResults.value.length : 'err'},`,
-    `sc: ${scResults.status === 'fulfilled' ? scResults.value.length : 'err'})`,
+    `piped: ${pipedResults.status === 'fulfilled' ? pipedResults.value.length : 'err'})`,
   );
 
   return all.slice(0, limit);
@@ -75,19 +64,15 @@ export async function searchAll(
  * ID format: "provider:id"  e.g. "youtube:dQw4w9WgXcQ"
  *
  * Strategy order for YouTube:
- *   1. yt-dlp (tv+mweb client, works with YOUTUBE_COOKIES env var)
- *   2. Invidious/Piped (no auth needed, unreliable public instances)
- *   3. SoundCloud title-match (completely avoids YouTube, last resort)
+ *   1. yt-dlp (android client, fast and provides full container/codec metadata)
+ *   2. Invidious/Piped (fallback if yt-dlp fails)
+ *   3. Title-based YouTube search (fallback if video ID is dead/restricted)
  */
 export async function resolveStream(
   compositeId: string,
   title?: string,
 ): Promise<StreamInfo> {
   const [provider, id] = compositeId.split(':');
-
-  if (provider === 'soundcloud') {
-    return streamSoundCloud(id);
-  }
 
   if (provider === 'youtube') {
     const strategies: Array<{ name: string; fn: () => Promise<StreamInfo> }> = [
@@ -100,6 +85,10 @@ export async function resolveStream(
             title: r.title,
             container: r.container,
             codec: r.codec,
+            album: r.album,
+            artists: r.artists,
+            album_artists: r.album_artists,
+            upload_date: r.upload_date,
             provider: 'ytdlp',
           })),
       },
@@ -109,18 +98,32 @@ export async function resolveStream(
       },
     ];
 
-    // SoundCloud title-match: completely avoids YouTube bot detection
+    // If direct video ID lookup fails and title hint is present, try search fallback
     if (title) {
       strategies.push({
-        name: 'soundcloud',
+        name: 'ytdlp-title-search',
         fn: async () => {
-          const results = await searchSoundCloud(title, 1);
-          const first = results[0];
-          if (!first) {
-            throw new Error('No SoundCloud match found');
+          const results = await ytdlpSearch(title, 5);
+          const alt = results.find((r) => r.id && r.id !== id);
+          if (!alt) {
+            throw new Error(`No alternative match found for "${title}"`);
           }
-          const scId = first.id.replace('soundcloud:', '');
-          return streamSoundCloud(scId);
+          console.log(
+            `[stream] Falling back to alternative video for "${title}": ${alt.id} ("${alt.title}")`,
+          );
+          const r = await ytdlpGetStream(alt.id);
+          return {
+            stream_url: r.stream_url,
+            duration: r.duration,
+            title: r.title,
+            container: r.container,
+            codec: r.codec,
+            album: r.album,
+            artists: r.artists,
+            album_artists: r.album_artists,
+            upload_date: r.upload_date,
+            provider: 'ytdlp',
+          };
         },
       });
     }

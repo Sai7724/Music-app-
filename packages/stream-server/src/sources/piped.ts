@@ -19,7 +19,7 @@ const INVIDIOUS_INSTANCES = [
 ];
 
 // Timeout per individual instance fetch (ms)
-const INSTANCE_TIMEOUT_MS = 8000;
+const INSTANCE_TIMEOUT_MS = 3000;
 
 /**
  * Race all instances — return the first successful response.
@@ -115,10 +115,26 @@ export async function streamPiped(videoId: string): Promise<StreamInfo> {
     throw new Error('Invidious: no audio stream found');
   }
 
+  // Parse container and codec from type string (e.g. 'audio/webm; codecs="opus"')
+  let container: string | null = null;
+  let codec: string | null = null;
+  if (best.type) {
+    const typeMatch = best.type.match(/^audio\/([a-zA-Z0-9_-]+)/);
+    if (typeMatch) {
+      container = typeMatch[1];
+    }
+    const codecMatch = best.type.match(/codecs="?([^";]+)"?/);
+    if (codecMatch) {
+      codec = codecMatch[1];
+    }
+  }
+
   return {
     stream_url: best.url,
     duration: data.lengthSeconds ? data.lengthSeconds * 1000 : null,
     title: data.title ?? null,
+    container,
+    codec,
     provider: 'invidious',
   };
 }
