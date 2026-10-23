@@ -20,21 +20,26 @@ async function invidiousFetch<T>(path: string): Promise<T> {
 
   for (const base of INVIDIOUS_INSTANCES) {
     try {
+      console.log(`[invidious] Trying instance: ${base}`);
       const res = await fetch(`${base}${path}`, {
         headers: { 'User-Agent': 'Nuclear/1.0' },
         signal: AbortSignal.timeout(12000),
       });
       if (!res.ok) {
+        console.warn(`[invidious] ${base} returned ${res.status}`);
         lastError = new Error(`${base} returned ${res.status}`);
         continue;
       }
+      console.log(`[invidious] Success with instance: ${base}`);
       return (await res.json()) as T;
     } catch (e) {
+      console.warn(`[invidious] ${base} failed:`, e);
       lastError = e instanceof Error ? e : new Error(String(e));
       continue;
     }
   }
 
+  console.error('[invidious] All instances failed, last error:', lastError);
   throw lastError ?? new Error('All Invidious instances failed');
 }
 

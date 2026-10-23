@@ -104,8 +104,9 @@ export async function resolveStream(
   }
 
   if (provider === 'youtube') {
+    // Try in priority order — first success wins
     const strategies: Array<{ name: string; fn: () => Promise<StreamInfo> }> = [
-      // 1. Invidious/Piped — no auth, no bot issues, fastest
+      // 1. Piped / Invidious (no auth, no bot issues, fastest)
       { name: 'invidious', fn: () => streamPiped(id) },
       // 2. yt-dlp android client — most reliable fallback
       {
@@ -119,6 +120,22 @@ export async function resolveStream(
           })),
       },
     ];
+
+    // JioSaavn cross-source match (no YouTube bot detection)
+    if (title) {
+      strategies.unshift({
+        name: 'jiosaavn',
+        fn: async () => {
+          const results = await searchJioSaavn(title, 1);
+          const first = results[0];
+          if (!first) {
+            throw new Error('No JioSaavn match');
+          }
+          const saavnId = first.id.replace('jiosaavn:', '');
+          return streamJioSaavn(saavnId);
+        },
+      });
+    }
 
     // SoundCloud title-match as last resort when title is available
     if (title) {
@@ -137,6 +154,8 @@ export async function resolveStream(
     }
 
     let lastError: Error | null = null;
+    let primaryError: Error | null = null; // Track error from primary sources (not fallbacks)
+
     for (const { name, fn } of strategies) {
       try {
         console.log(`[stream] Trying strategy ${name} for ${compositeId}`);
@@ -156,11 +175,20 @@ export async function resolveStream(
           `[stream] strategy failed for ${compositeId}: ${name}:`,
           lastError.message,
         );
+        // Track primary source errors (not fallbacks like SoundCloud)
+        if (name !== 'soundcloud' && name !== 'jiosaavn') {
+          primaryError = lastError;
+        }
         continue;
       }
     }
 
-    throw lastError ?? new Error(`Could not resolve stream for ${compositeId}`);
+    // Throw the primary source error if available, otherwise the last error
+    throw (
+      primaryError ??
+      lastError ??
+      new Error(`Could not resolve stream for ${compositeId}`)
+    );
   }
 
   throw new Error(`Unknown provider: ${provider}`);

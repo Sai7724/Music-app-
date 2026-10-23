@@ -109,6 +109,8 @@ export async function getStream(urlOrId: string): Promise<StreamInfo> {
     ? urlOrId
     : `https://www.youtube.com/watch?v=${urlOrId}`;
 
+  console.log('[ytdlp] Getting stream for:', url);
+
   // Format preference order:
   //   1. opus in webm (best for streaming, no transcode needed)
   //   2. m4a (broad device support)
@@ -129,35 +131,44 @@ export async function getStream(urlOrId: string): Promise<StreamInfo> {
     ignorErrors: true,
   };
 
-  const output = await youtubeDl(
-    url,
-    withCookies(baseOpts) as Parameters<typeof youtubeDl>[1],
-  );
+  try {
+    const output = await youtubeDl(
+      url,
+      withCookies(baseOpts) as Parameters<typeof youtubeDl>[1],
+    );
 
-  const data = output as Record<string, unknown>;
+    const data = output as Record<string, unknown>;
 
-  const formats = data.requested_formats as
-    Record<string, unknown>[] | undefined;
-  const streamUrl =
-    (formats?.[0]?.url as string | undefined) ??
-    (data.url as string | undefined) ??
-    '';
+    const formats = data.requested_formats as
+      Record<string, unknown>[] | undefined;
+    const streamUrl =
+      (formats?.[0]?.url as string | undefined) ??
+      (data.url as string | undefined) ??
+      '';
 
-  if (!streamUrl) {
-    throw new Error(`yt-dlp returned no stream URL for ${urlOrId}`);
+    if (!streamUrl) {
+      console.error('[ytdlp] No stream URL in response:', data);
+      throw new Error(`yt-dlp returned no stream URL for ${urlOrId}`);
+    }
+
+    console.log('[ytdlp] Successfully got stream URL');
+
+    return {
+      stream_url: streamUrl,
+      duration: typeof data.duration === 'number' ? data.duration * 1000 : null,
+      title: typeof data.title === 'string' ? data.title : null,
+      container: resolveContainer(data, formats),
+      codec: resolveCodec(data, formats),
+      album: typeof data.album === 'string' ? data.album : null,
+      artists: parseStringArray(data.artists),
+      album_artists: parseStringArray(data.album_artists),
+      upload_date:
+        typeof data.upload_date === 'string' ? data.upload_date : null,
+    };
+  } catch (error) {
+    console.error('[ytdlp] Failed to get stream:', error);
+    throw error;
   }
-
-  return {
-    stream_url: streamUrl,
-    duration: typeof data.duration === 'number' ? data.duration * 1000 : null,
-    title: typeof data.title === 'string' ? data.title : null,
-    container: resolveContainer(data, formats),
-    codec: resolveCodec(data, formats),
-    album: typeof data.album === 'string' ? data.album : null,
-    artists: parseStringArray(data.artists),
-    album_artists: parseStringArray(data.album_artists),
-    upload_date: typeof data.upload_date === 'string' ? data.upload_date : null,
-  };
 }
 
 /** Fetch playlist metadata without downloading. */
