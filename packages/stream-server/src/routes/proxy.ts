@@ -18,7 +18,10 @@ export const proxyRouter = Router();
 // Preferred: GET /api/proxy/stream?u=<encodeURIComponent(url)>
 proxyRouter.get('/stream', streamLimiter, async (req, res) => {
   const u = req.query.u;
+  console.log('[proxy] Received request with u param:', u);
+
   if (typeof u !== 'string' || !u) {
+    console.error('[proxy] Missing or invalid ?u= parameter');
     res.status(400).json({ error: 'Missing ?u= parameter' });
     return;
   }
@@ -26,7 +29,9 @@ proxyRouter.get('/stream', streamLimiter, async (req, res) => {
   let targetUrl: string;
   try {
     targetUrl = decodeURIComponent(u);
-  } catch {
+    console.log('[proxy] Decoded target URL:', targetUrl);
+  } catch (err) {
+    console.error('[proxy] Failed to decode URL:', err);
     res.status(400).json({ error: 'Invalid encoded URL' });
     return;
   }

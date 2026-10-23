@@ -139,11 +139,16 @@ export async function resolveStream(
     let lastError: Error | null = null;
     for (const { name, fn } of strategies) {
       try {
+        console.log(`[stream] Trying strategy ${name} for ${compositeId}`);
         const result = await fn();
         if (result.stream_url) {
-          console.log(`[stream] resolved "${compositeId}" via ${name}`);
+          console.log(
+            `[stream] resolved "${compositeId}" via ${name}, URL:`,
+            result.stream_url,
+          );
           return result;
         }
+        // strategy returned empty URL — treat as failure
         throw new Error(`${name}: empty stream_url`);
       } catch (e) {
         lastError = e instanceof Error ? e : new Error(String(e));

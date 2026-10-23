@@ -97,5 +97,10 @@ export async function ytdlpGetStream(
 export function buildProxiedUrl(originalUrl: string): string {
   // Use encodeURIComponent so all characters (including those > 0xFF that
   // would break btoa) are safely percent-encoded before sending as a param.
-  return `${BASE_URL}/api/proxy/stream?u=${encodeURIComponent(originalUrl)}`;
+  console.log('[streamApi] Building proxied URL for:', originalUrl);
+  const encoded = encodeURIComponent(originalUrl);
+  console.log('[streamApi] Encoded URL:', encoded);
+  const result = `${BASE_URL}/api/proxy/stream?u=${encoded}`;
+  console.log('[streamApi] Final proxied URL:', result);
+  return result;
 }

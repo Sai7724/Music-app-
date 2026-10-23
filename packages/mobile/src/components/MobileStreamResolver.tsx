@@ -6,8 +6,8 @@ import { useEffect, useRef } from 'react';
 
 import type { QueueItem, StreamCandidate } from '@nuclearplayer/model';
 
-import { mobileAudioSourceFactory } from '../services/audioSourceFactory';
 import { ytdlpGetStream } from '../native/streamApi';
+import { mobileAudioSourceFactory } from '../services/audioSourceFactory';
 import { useQueueStore } from '../stores/queueStore';
 import { useSoundStore } from '../stores/soundStore';
 
@@ -23,15 +23,23 @@ const resolveStream = async (item: QueueItem): Promise<void> => {
   try {
     // Get stream info from Render backend — passes composite id + title
     // Server tries all sources automatically (JioSaavn → Piped → yt-dlp)
+    console.log(
+      '[MobileStreamResolver] Resolving stream for:',
+      item.track.source.id,
+      item.track.title,
+    );
     const info = await ytdlpGetStream(
       null,
       item.track.source.id,
       item.track.title,
     );
+    console.log('[MobileStreamResolver] Stream info received:', info);
 
     // Guard: if the current item changed while we were fetching, discard this result
     const current = useQueueStore.getState().getCurrentItem();
-    if (!current || current.id !== item.id) return;
+    if (!current || current.id !== item.id) {
+      return;
+    }
 
     const candidate: StreamCandidate = {
       id: item.track.source.id,
@@ -43,7 +51,8 @@ const resolveStream = async (item: QueueItem): Promise<void> => {
       },
       stream: {
         url: info.stream_url,
-        protocol: (info.container === 'm3u8' ? 'hls' : 'http') as 'hls' | 'http',
+        protocol: (info.container === 'm3u8' ? 'hls' : 'http') as
+          'hls' | 'http',
         durationMs: info.duration ?? undefined,
         codec: info.codec ?? undefined,
         container: info.container ?? undefined,
@@ -77,13 +86,19 @@ export const MobileStreamResolver = () => {
 
   useEffect(() => {
     const onCurrentItemChanged = (currentItem: QueueItem | undefined) => {
-      if (!currentItem) return;
+      if (!currentItem) {
+        return;
+      }
 
       const key = buildKey(currentItem);
-      if (key === keyRef.current) return;
+      if (key === keyRef.current) {
+        return;
+      }
       keyRef.current = key;
 
-      if (currentItem.status === 'loading') return;
+      if (currentItem.status === 'loading') {
+        return;
+      }
 
       void resolveStream(currentItem);
     };

@@ -47,6 +47,22 @@ export class MobileAudioSourceFactory {
     }
 
     // For direct streams, proxy through Render to avoid CORS on mobile
+    // Validate stream URL before proxying
+    if (!stream.url || typeof stream.url !== 'string') {
+      console.error('[audioSourceFactory] Invalid stream URL:', stream.url);
+      throw new Error('Invalid stream URL');
+    }
+    if (
+      !stream.url.startsWith('http://') &&
+      !stream.url.startsWith('https://')
+    ) {
+      console.error(
+        '[audioSourceFactory] Stream URL must be HTTP/HTTPS:',
+        stream.url,
+      );
+      throw new Error('Stream URL must be HTTP/HTTPS');
+    }
+    console.log('[audioSourceFactory] Proxying stream URL:', stream.url);
     const proxyUrl = buildProxiedUrl(stream.url);
     const durationMs = stream.durationMs ?? candidate.durationMs;
     const mseCodec = toMseCodec(stream);
