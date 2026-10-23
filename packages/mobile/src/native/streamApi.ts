@@ -95,11 +95,7 @@ export async function ytdlpGetStream(
 
 /** Build a proxied audio URL via the backend proxy (handles CORS on device). */
 export function buildProxiedUrl(originalUrl: string): string {
-  const encoded = btoa(originalUrl)
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '');
-  // Use query-param form (?u=) so that "/" chars in the base64 string don't
-  // get split by Express as path segments (which caused 400/404 errors).
-  return `${BASE_URL}/api/proxy/stream?u=${encoded}`;
+  // Use encodeURIComponent so all characters (including those > 0xFF that
+  // would break btoa) are safely percent-encoded before sending as a param.
+  return `${BASE_URL}/api/proxy/stream?u=${encodeURIComponent(originalUrl)}`;
 }

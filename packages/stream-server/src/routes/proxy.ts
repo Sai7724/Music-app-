@@ -1,10 +1,12 @@
 /**
  * CORS proxy — mirrors the stream_server.rs from the Tauri backend.
- * The mobile app passes base64-encoded audio URLs here to bypass CORS restrictions.
+ * The mobile app passes the target URL percent-encoded in the ?u= query param.
  *
- * URL encoding: the client sends the target URL as URL-safe base64 in a query
- * parameter (?u=...) rather than a path segment.  Path segments are split by
- * Express on every "/" in the decoded base64 string, causing 404s.
+ * History:
+ *   v1 — base64 in path segment (:encodedUrl): broke on "/" in base64 output.
+ *   v2 — url-safe base64 in ?u= query param: broke on btoa() with chars > 0xFF
+ *        (common in YouTube sig parameters — btoa is latin-1 only).
+ *   v3 (current) — plain encodeURIComponent in ?u=, decodeURIComponent on server.
  */
 import { Router } from 'express';
 import { fetch } from 'undici';
@@ -13,45 +15,48 @@ import { streamLimiter } from '../rateLimit.js';
 
 export const proxyRouter = Router();
 
-function decodeProxyParam(encoded: string): string {
-  // URL-safe base64 → standard base64 → binary string
-  const base64 = encoded.replace(/-/g, '+').replace(/_/g, '/');
-  // Re-pad to a multiple of 4
-  const pad = base64.length % 4;
-  const padded = pad ? base64 + '='.repeat(4 - pad) : base64;
-  return atob(padded);
-}
-
-// Legacy path-segment route — kept for backwards compat with older app builds.
-// New builds use the query-param route below.
-proxyRouter.get('/stream/:encodedUrl', streamLimiter, async (req, res) => {
-  handleProxy(req.params.encodedUrl, req, res);
-});
-
-// Preferred route: GET /api/proxy/stream?u=<url-safe-base64>
+// Preferred: GET /api/proxy/stream?u=<encodeURIComponent(url)>
 proxyRouter.get('/stream', streamLimiter, async (req, res) => {
   const u = req.query.u;
   if (typeof u !== 'string' || !u) {
     res.status(400).json({ error: 'Missing ?u= parameter' });
     return;
   }
-  handleProxy(u, req, res);
-});
 
-async function handleProxy(
-  encodedUrl: string,
-  req: import('express').Request,
-  res: import('express').Response,
-): Promise<void> {
   let targetUrl: string;
   try {
-    targetUrl = decodeProxyParam(encodedUrl);
+    targetUrl = decodeURIComponent(u);
   } catch {
     res.status(400).json({ error: 'Invalid encoded URL' });
     return;
   }
 
-  // Only allow http/https upstream URLs
+  await proxyUpstream(targetUrl, req, res);
+});
+
+// Legacy: GET /api/proxy/stream/:encodedUrl (url-safe base64, old app builds)
+proxyRouter.get('/stream/:encodedUrl', streamLimiter, async (req, res) => {
+  const { encodedUrl } = req.params;
+
+  let targetUrl: string;
+  try {
+    const base64 = encodedUrl.replace(/-/g, '+').replace(/_/g, '/');
+    const pad = base64.length % 4;
+    const padded = pad ? base64 + '='.repeat(4 - pad) : base64;
+    targetUrl = atob(padded);
+  } catch {
+    res.status(400).json({ error: 'Invalid encoded URL' });
+    return;
+  }
+
+  await proxyUpstream(targetUrl, req, res);
+});
+
+async function proxyUpstream(
+  targetUrl: string,
+  req: import('express').Request,
+  res: import('express').Response,
+): Promise<void> {
   if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
     res.status(400).json({ error: 'Invalid upstream URL' });
     return;
@@ -63,14 +68,13 @@ async function handleProxy(
       headers: {
         ...(range ? { Range: range } : {}),
         'User-Agent': 'Mozilla/5.0',
-        // Some CDNs (e.g. Invidious streams) require Referer or Origin
+        // Invidious/YouTube CDNs reject requests without a Referer
         Referer: new URL(targetUrl).origin + '/',
       },
     });
 
     res.status(upstream.status);
 
-    // Forward relevant headers
     const forward = [
       'content-type',
       'content-length',
@@ -90,18 +94,14 @@ async function handleProxy(
     }
 
     const reader = upstream.body.getReader();
-    const pump = async () => {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) {
-          break;
-        }
-        res.write(Buffer.from(value));
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
       }
-      res.end();
-    };
-
-    await pump();
+      res.write(Buffer.from(value));
+    }
+    res.end();
   } catch (err) {
     console.error('Proxy error:', err);
     if (!res.headersSent) {
