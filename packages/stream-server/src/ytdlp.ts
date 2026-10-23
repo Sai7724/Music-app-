@@ -125,8 +125,12 @@ export async function getStream(urlOrId: string): Promise<StreamInfo> {
     preferFreeFormats: true,
     skipDownload: true,
     format: formatString,
-    // Bypass age-gate / bot detection without a browser
-    extractorArgs: 'youtube:player_client=android',
+    // Use the TV client — doesn't require po-token or cookies on server IPs.
+    // 'tv' is the YouTube TV (Leanback) client which has less bot detection
+    // than web/android on cloud server IP ranges.
+    // player_skip=webpage,configs avoids loading the JS player (faster + less
+    // likely to trigger bot checks).
+    extractorArgs: 'youtube:player_client=tv,mweb;player_skip=webpage,configs',
     // Do not abort on minor errors (e.g. geo-restricted subtitle tracks)
     ignoreErrors: true,
   };

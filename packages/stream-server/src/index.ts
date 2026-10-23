@@ -1,3 +1,4 @@
+import { exec } from 'child_process';
 import cors from 'cors';
 import express from 'express';
 import helmet from 'helmet';
@@ -6,6 +7,20 @@ import { playlistRouter } from './routes/playlist.js';
 import { proxyRouter } from './routes/proxy.js';
 import { searchRouter } from './routes/search.js';
 import { streamRouter } from './routes/stream.js';
+
+// Self-update yt-dlp binary on startup so we always have the latest version.
+// YouTube breaks older yt-dlp versions frequently — this ensures the server
+// never gets stuck on a stale binary after a Render deploy.
+exec('node node_modules/youtube-dl-exec/scripts/postinstall.js', (err) => {
+  if (err) {
+    console.warn(
+      '[startup] yt-dlp self-update failed (non-fatal):',
+      err.message,
+    );
+  } else {
+    console.log('[startup] yt-dlp binary up to date');
+  }
+});
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 4200;
