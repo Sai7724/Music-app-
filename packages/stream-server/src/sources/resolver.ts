@@ -12,7 +12,6 @@ import {
   getStream as ytdlpGetStream,
   search as ytdlpSearch,
 } from '../ytdlp.js';
-import { searchJioSaavn, streamJioSaavn } from './jiosaavn.js';
 import { searchPiped, streamPiped } from './piped.js';
 import { searchSoundCloud, streamSoundCloud } from './soundcloud.js';
 import type { SearchResult, StreamInfo } from './types.js';
@@ -28,46 +27,34 @@ export async function searchAll(
   query: string,
   limit = 30,
 ): Promise<SearchResult[]> {
-  const perSource = Math.ceil(limit / 2); // each source contributes up to half
+  const perSource = Math.ceil(limit / 2);
 
-  const [ytResults, saavnResults, scResults, pipedResults] =
-    await Promise.allSettled([
-      // yt-dlp with cookies (most comprehensive)
-      ytdlpSearch(query, perSource).then((r) =>
-        r.map((item) => ({
-          id: `youtube:${item.id}`,
-          title: item.title,
-          duration: item.duration,
-          thumbnail: item.thumbnail,
-          artist: item.channel,
-          provider: 'youtube' as const,
-        })),
-      ),
-      // JioSaavn (best for Hindi/English pop, no bot issues)
-      searchJioSaavn(query, perSource),
-      // SoundCloud (indie/remixes)
-      searchSoundCloud(query, Math.floor(perSource / 2)),
-      // Piped as YouTube fallback
-      searchPiped(query, perSource),
-    ]);
+  const [ytResults, scResults, pipedResults] = await Promise.allSettled([
+    // yt-dlp (most comprehensive)
+    ytdlpSearch(query, perSource).then((r) =>
+      r.map((item) => ({
+        id: `youtube:${item.id}`,
+        title: item.title,
+        duration: item.duration,
+        thumbnail: item.thumbnail,
+        artist: item.channel,
+        provider: 'youtube' as const,
+      })),
+    ),
+    // SoundCloud (indie/remixes)
+    searchSoundCloud(query, Math.floor(perSource / 2)),
+    // Invidious/Piped as YouTube fallback
+    searchPiped(query, perSource),
+  ]);
 
   const all: SearchResult[] = [];
 
-  // Prefer JioSaavn first (reliable, high quality)
-  if (saavnResults.status === 'fulfilled') {
-    all.push(...saavnResults.value);
-  }
-
-  // Then yt-dlp YouTube
+  // yt-dlp YouTube first
   if (ytResults.status === 'fulfilled') {
-    for (const r of ytResults.value) {
-      if (!isDuplicate(r, all)) {
-        all.push(r);
-      }
-    }
+    all.push(...ytResults.value);
   }
 
-  // Then Piped YouTube (dedup against yt-dlp results)
+  // Piped YouTube (dedup against yt-dlp results)
   if (pipedResults.status === 'fulfilled') {
     for (const r of pipedResults.value) {
       if (!isDuplicate(r, all)) {
@@ -76,7 +63,7 @@ export async function searchAll(
     }
   }
 
-  // Then SoundCloud
+  // SoundCloud
   if (scResults.status === 'fulfilled') {
     for (const r of scResults.value) {
       if (!isDuplicate(r, all)) {
@@ -87,8 +74,7 @@ export async function searchAll(
 
   console.log(
     `[search] "${query}" → ${all.length} results`,
-    `(saavn: ${saavnResults.status === 'fulfilled' ? saavnResults.value.length : 'err'},`,
-    `yt: ${ytResults.status === 'fulfilled' ? ytResults.value.length : 'err'},`,
+    `(yt: ${ytResults.status === 'fulfilled' ? ytResults.value.length : 'err'},`,
     `piped: ${pipedResults.status === 'fulfilled' ? pipedResults.value.length : 'err'},`,
     `sc: ${scResults.status === 'fulfilled' ? scResults.value.length : 'err'})`,
   );
@@ -100,13 +86,12 @@ export async function searchAll(
 
 /**
  * Resolve a stream URL for a given track ID.
- * ID format: "provider:id"  e.g. "youtube:dQw4w9WgXcQ", "jiosaavn:abc123"
+ * ID format: "provider:id"  e.g. "youtube:dQw4w9WgXcQ"
  *
- * For YouTube IDs, tries multiple providers as fallback:
- *   1. JioSaavn match (if title known)
- *   2. Piped (no bot detection)
- *   3. yt-dlp + cookies
- *   4. SoundCloud (last resort)
+ * For YouTube IDs, tries in order:
+ *   1. Invidious/Piped (no bot detection)
+ *   2. yt-dlp android client (bypasses age-gate on cloud)
+ *   3. SoundCloud title-match (last resort, when title is provided)
  */
 export async function resolveStream(
   compositeId: string,
@@ -114,22 +99,15 @@ export async function resolveStream(
 ): Promise<StreamInfo> {
   const [provider, id] = compositeId.split(':');
 
-  // ── Direct resolution by provider ────────────────────────────────
-  if (provider === 'jiosaavn') {
-    return streamJioSaavn(id);
-  }
-
   if (provider === 'soundcloud') {
     return streamSoundCloud(id);
   }
 
   if (provider === 'youtube') {
-    // Try in priority order — first success wins
     const strategies: Array<{ name: string; fn: () => Promise<StreamInfo> }> = [
-      // 1. Piped / Invidious (no auth, no bot issues, fastest)
+      // 1. Invidious/Piped — no auth, no bot issues, fastest
       { name: 'invidious', fn: () => streamPiped(id) },
-      // 2. yt-dlp + cookies (most reliable when cookies are set; uses android
-      //    player client to bypass age-gate / bot detection on cloud servers)
+      // 2. yt-dlp android client — most reliable fallback
       {
         name: 'ytdlp',
         fn: () =>
@@ -142,22 +120,8 @@ export async function resolveStream(
       },
     ];
 
-    // If we have a title, prepend a JioSaavn cross-source match (no YouTube
-    // bot detection at all) and append a SoundCloud last-resort fallback.
+    // SoundCloud title-match as last resort when title is available
     if (title) {
-      strategies.unshift({
-        name: 'jiosaavn',
-        fn: async () => {
-          const results = await searchJioSaavn(title, 1);
-          const first = results[0];
-          if (!first) {
-            throw new Error('No JioSaavn match');
-          }
-          const saavnId = first.id.replace('jiosaavn:', '');
-          return streamJioSaavn(saavnId);
-        },
-      });
-
       strategies.push({
         name: 'soundcloud',
         fn: async () => {
@@ -180,7 +144,6 @@ export async function resolveStream(
           console.log(`[stream] resolved "${compositeId}" via ${name}`);
           return result;
         }
-        // strategy returned empty URL — treat as failure
         throw new Error(`${name}: empty stream_url`);
       } catch (e) {
         lastError = e instanceof Error ? e : new Error(String(e));
@@ -214,7 +177,6 @@ function isDuplicate(
   return existing.some((e) => {
     const eTitle = normalize(e.title);
     const eArtist = normalize(e.artist ?? '');
-    // Same title and same artist = duplicate
     return (
       eTitle === cTitle &&
       (cArtist === '' || eArtist === '' || eArtist === cArtist)
