@@ -13,9 +13,9 @@ if (!BASE_URL) {
 
 /** A search result from any source — provider is encoded in id as "provider:id" */
 export type SearchResult = {
-  id: string;           // e.g. "youtube:dQw4w9WgXcQ" | "jiosaavn:abc" | "soundcloud:123"
+  id: string; // e.g. "youtube:dQw4w9WgXcQ" | "jiosaavn:abc" | "soundcloud:123"
   title: string;
-  duration: number | null;   // seconds
+  duration: number | null; // seconds
   thumbnail: string | null;
   artist: string | null;
   provider: 'youtube' | 'jiosaavn' | 'soundcloud';
@@ -23,7 +23,7 @@ export type SearchResult = {
 
 export type StreamInfo = {
   stream_url: string;
-  duration: number | null;   // ms
+  duration: number | null; // ms
   title: string | null;
   provider: string;
   // Legacy fields for compatibility
@@ -86,7 +86,9 @@ export async function ytdlpGetStream(
     params.set('url', url);
   }
 
-  if (title) params.set('title', title);
+  if (title) {
+    params.set('title', title);
+  }
 
   return apiFetch<StreamInfo>(`/api/stream?${params}`);
 }
@@ -97,5 +99,7 @@ export function buildProxiedUrl(originalUrl: string): string {
     .replace(/\+/g, '-')
     .replace(/\//g, '_')
     .replace(/=+$/, '');
-  return `${BASE_URL}/api/proxy/stream/${encoded}`;
+  // Use query-param form (?u=) so that "/" chars in the base64 string don't
+  // get split by Express as path segments (which caused 400/404 errors).
+  return `${BASE_URL}/api/proxy/stream?u=${encoded}`;
 }
