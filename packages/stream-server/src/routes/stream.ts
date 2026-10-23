@@ -26,7 +26,8 @@ streamRouter.get('/', streamLimiter, async (req, res) => {
     const info = await getStream(urlOrId);
     res.json(info);
   } catch (err) {
-    console.error('Stream resolution error:', err);
-    res.status(500).json({ error: 'Stream resolution failed' });
+    const detail = err instanceof Error ? err.message : String(err);
+    console.error('[stream] resolution error for', urlOrId, ':', detail);
+    res.status(500).json({ error: 'Stream resolution failed', detail });
   }
 });
