@@ -8,9 +8,12 @@
  * source provided the result.
  */
 
-import { search as ytdlpSearch, getStream as ytdlpGetStream } from '../ytdlp.js';
-import { searchPiped, streamPiped } from './piped.js';
+import {
+  getStream as ytdlpGetStream,
+  search as ytdlpSearch,
+} from '../ytdlp.js';
 import { searchJioSaavn, streamJioSaavn } from './jiosaavn.js';
+import { searchPiped, streamPiped } from './piped.js';
 import { searchSoundCloud, streamSoundCloud } from './soundcloud.js';
 import type { SearchResult, StreamInfo } from './types.js';
 
@@ -51,26 +54,34 @@ export async function searchAll(
   const all: SearchResult[] = [];
 
   // Prefer JioSaavn first (reliable, high quality)
-  if (saavnResults.status === 'fulfilled') all.push(...saavnResults.value);
+  if (saavnResults.status === 'fulfilled') {
+    all.push(...saavnResults.value);
+  }
 
   // Then yt-dlp YouTube
   if (ytResults.status === 'fulfilled') {
     for (const r of ytResults.value) {
-      if (!isDuplicate(r, all)) all.push(r);
+      if (!isDuplicate(r, all)) {
+        all.push(r);
+      }
     }
   }
 
   // Then Piped YouTube (dedup against yt-dlp results)
   if (pipedResults.status === 'fulfilled') {
     for (const r of pipedResults.value) {
-      if (!isDuplicate(r, all)) all.push(r);
+      if (!isDuplicate(r, all)) {
+        all.push(r);
+      }
     }
   }
 
   // Then SoundCloud
   if (scResults.status === 'fulfilled') {
     for (const r of scResults.value) {
-      if (!isDuplicate(r, all)) all.push(r);
+      if (!isDuplicate(r, all)) {
+        all.push(r);
+      }
     }
   }
 
@@ -114,40 +125,69 @@ export async function resolveStream(
 
   if (provider === 'youtube') {
     // Try in priority order — first success wins
-    const strategies: Array<() => Promise<StreamInfo>> = [
-      // 1. Piped (no auth, no bot issues)
-      () => streamPiped(id),
-      // 2. yt-dlp + cookies (most reliable if cookies set)
-      () => ytdlpGetStream(id).then((r) => ({
-        stream_url: r.stream_url,
-        duration: r.duration,
-        title: r.title,
-        provider: 'ytdlp',
-      })),
+    const strategies: Array<{ name: string; fn: () => Promise<StreamInfo> }> = [
+      // 1. Piped / Invidious (no auth, no bot issues, fastest)
+      { name: 'invidious', fn: () => streamPiped(id) },
+      // 2. yt-dlp + cookies (most reliable when cookies are set; uses android
+      //    player client to bypass age-gate / bot detection on cloud servers)
+      {
+        name: 'ytdlp',
+        fn: () =>
+          ytdlpGetStream(id).then((r) => ({
+            stream_url: r.stream_url,
+            duration: r.duration,
+            title: r.title,
+            provider: 'ytdlp',
+          })),
+      },
     ];
 
-    // If we have a title, also try JioSaavn as a cross-source fallback
+    // If we have a title, prepend a JioSaavn cross-source match (no YouTube
+    // bot detection at all) and append a SoundCloud last-resort fallback.
     if (title) {
-      strategies.unshift(async () => {
-        const results = await searchJioSaavn(title, 1);
-        const first = results[0];
-        if (!first) throw new Error('No JioSaavn match');
-        const saavnId = first.id.replace('jiosaavn:', '');
-        return streamJioSaavn(saavnId);
+      strategies.unshift({
+        name: 'jiosaavn',
+        fn: async () => {
+          const results = await searchJioSaavn(title, 1);
+          const first = results[0];
+          if (!first) {
+            throw new Error('No JioSaavn match');
+          }
+          const saavnId = first.id.replace('jiosaavn:', '');
+          return streamJioSaavn(saavnId);
+        },
+      });
+
+      strategies.push({
+        name: 'soundcloud',
+        fn: async () => {
+          const results = await searchSoundCloud(title, 1);
+          const first = results[0];
+          if (!first) {
+            throw new Error('No SoundCloud match');
+          }
+          const scId = first.id.replace('soundcloud:', '');
+          return streamSoundCloud(scId);
+        },
       });
     }
 
     let lastError: Error | null = null;
-    for (const strategy of strategies) {
+    for (const { name, fn } of strategies) {
       try {
-        const result = await strategy();
+        const result = await fn();
         if (result.stream_url) {
-          console.log(`[stream] resolved "${compositeId}" via ${result.provider}`);
+          console.log(`[stream] resolved "${compositeId}" via ${name}`);
           return result;
         }
+        // strategy returned empty URL — treat as failure
+        throw new Error(`${name}: empty stream_url`);
       } catch (e) {
         lastError = e instanceof Error ? e : new Error(String(e));
-        console.warn(`[stream] strategy failed for ${compositeId}:`, lastError.message);
+        console.warn(
+          `[stream] strategy failed for ${compositeId}: ${name}:`,
+          lastError.message,
+        );
         continue;
       }
     }
@@ -164,7 +204,10 @@ function normalize(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
-function isDuplicate(candidate: SearchResult, existing: SearchResult[]): boolean {
+function isDuplicate(
+  candidate: SearchResult,
+  existing: SearchResult[],
+): boolean {
   const cTitle = normalize(candidate.title);
   const cArtist = normalize(candidate.artist ?? '');
 
@@ -172,6 +215,9 @@ function isDuplicate(candidate: SearchResult, existing: SearchResult[]): boolean
     const eTitle = normalize(e.title);
     const eArtist = normalize(e.artist ?? '');
     // Same title and same artist = duplicate
-    return eTitle === cTitle && (cArtist === '' || eArtist === '' || eArtist === cArtist);
+    return (
+      eTitle === cTitle &&
+      (cArtist === '' || eArtist === '' || eArtist === cArtist)
+    );
   });
 }

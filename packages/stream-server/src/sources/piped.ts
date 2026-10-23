@@ -7,11 +7,12 @@ import type { SearchResult, StreamInfo } from './types.js';
 
 // Public Invidious instances (more reliable than Piped currently)
 const INVIDIOUS_INSTANCES = [
+  'https://iv.datura.network',
   'https://invidious.privacyredirect.com',
-  'https://invidious.fdn.fr',
-  'https://inv.nadeko.net',
   'https://invidious.nerdvpn.de',
-  'https://yt.cdaut.de',
+  'https://inv.tux.pizza',
+  'https://invidious.io.lol',
+  'https://invidious.perennialte.ch',
 ];
 
 async function invidiousFetch<T>(path: string): Promise<T> {
@@ -21,13 +22,13 @@ async function invidiousFetch<T>(path: string): Promise<T> {
     try {
       const res = await fetch(`${base}${path}`, {
         headers: { 'User-Agent': 'Nuclear/1.0' },
-        signal: AbortSignal.timeout(8000),
+        signal: AbortSignal.timeout(12000),
       });
       if (!res.ok) {
         lastError = new Error(`${base} returned ${res.status}`);
         continue;
       }
-      return await res.json() as T;
+      return (await res.json()) as T;
     } catch (e) {
       lastError = e instanceof Error ? e : new Error(String(e));
       continue;
@@ -99,16 +100,15 @@ export async function streamPiped(videoId: string): Promise<StreamInfo> {
   // Pick best audio-only stream
   const audioStreams = (data.adaptiveFormats ?? [])
     .filter(
-      (f) =>
-        f.type?.startsWith('audio/') &&
-        f.url &&
-        !f.type.includes('video'),
+      (f) => f.type?.startsWith('audio/') && f.url && !f.type.includes('video'),
     )
     .sort((a, b) => (b.bitrate ?? 0) - (a.bitrate ?? 0));
 
   const best = audioStreams[0] ?? data.formatStreams?.[0];
 
-  if (!best?.url) throw new Error('Invidious: no audio stream found');
+  if (!best?.url) {
+    throw new Error('Invidious: no audio stream found');
+  }
 
   return {
     stream_url: best.url,

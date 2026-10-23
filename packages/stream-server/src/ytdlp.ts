@@ -2,7 +2,7 @@
  * yt-dlp wrapper using youtube-dl-exec.
  * This package auto-downloads the yt-dlp binary on first run.
  */
-import { writeFileSync, existsSync } from 'fs';
+import { existsSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { youtubeDl } from 'youtube-dl-exec';
@@ -21,7 +21,9 @@ if (cookiesContent) {
     cookiesPath = undefined;
   }
 } else {
-  console.warn('[ytdlp] No YOUTUBE_COOKIES set — may hit bot detection on cloud');
+  console.warn(
+    '[ytdlp] No YOUTUBE_COOKIES set — may hit bot detection on cloud',
+  );
 }
 
 // Add cookies to any yt-dlp options if available
@@ -71,14 +73,17 @@ export async function search(
   query: string,
   maxResults = 10,
 ): Promise<SearchResult[]> {
-  const output = await youtubeDl(`ytsearch${maxResults}:${query}`, withCookies({
-    dumpSingleJson: true,
-    noWarnings: true,
-    
-    preferFreeFormats: true,
-    skipDownload: true,
-    flatPlaylist: true,
-  }) as Parameters<typeof youtubeDl>[1]);
+  const output = await youtubeDl(
+    `ytsearch${maxResults}:${query}`,
+    withCookies({
+      dumpSingleJson: true,
+      noWarnings: true,
+
+      preferFreeFormats: true,
+      skipDownload: true,
+      flatPlaylist: true,
+    }) as Parameters<typeof youtubeDl>[1],
+  );
 
   const data = output as { entries?: unknown[] };
   const entries: unknown[] = data.entries ?? [];
@@ -104,22 +109,43 @@ export async function getStream(urlOrId: string): Promise<StreamInfo> {
     ? urlOrId
     : `https://www.youtube.com/watch?v=${urlOrId}`;
 
-  const output = await youtubeDl(url, withCookies({
+  // Format preference order:
+  //   1. opus in webm (best for streaming, no transcode needed)
+  //   2. m4a (broad device support)
+  //   3. any best audio
+  //   4. best overall as last resort
+  const formatString =
+    'bestaudio[ext=webm][acodec=opus]/bestaudio[ext=m4a]/bestaudio/best';
+
+  const baseOpts: Record<string, unknown> = {
     dumpSingleJson: true,
     noWarnings: true,
-    
     preferFreeFormats: true,
     skipDownload: true,
-    format: 'bestaudio[ext=m4a]/bestaudio/best',
-  }) as Parameters<typeof youtubeDl>[1]);
+    format: formatString,
+    // Bypass age-gate / bot detection without a browser
+    extractor_args: 'youtube:player_client=android',
+    // Do not abort on minor errors (e.g. geo-restricted subtitle tracks)
+    ignorErrors: true,
+  };
+
+  const output = await youtubeDl(
+    url,
+    withCookies(baseOpts) as Parameters<typeof youtubeDl>[1],
+  );
 
   const data = output as Record<string, unknown>;
 
-  const formats = data.requested_formats as Record<string, unknown>[] | undefined;
+  const formats = data.requested_formats as
+    Record<string, unknown>[] | undefined;
   const streamUrl =
     (formats?.[0]?.url as string | undefined) ??
     (data.url as string | undefined) ??
     '';
+
+  if (!streamUrl) {
+    throw new Error(`yt-dlp returned no stream URL for ${urlOrId}`);
+  }
 
   return {
     stream_url: streamUrl,
@@ -136,13 +162,16 @@ export async function getStream(urlOrId: string): Promise<StreamInfo> {
 
 /** Fetch playlist metadata without downloading. */
 export async function getPlaylist(url: string): Promise<PlaylistInfo> {
-  const output = await youtubeDl(url, withCookies({
-    dumpSingleJson: true,
-    noWarnings: true,
-    
-    flatPlaylist: true,
-    skipDownload: true,
-  }) as Parameters<typeof youtubeDl>[1]);
+  const output = await youtubeDl(
+    url,
+    withCookies({
+      dumpSingleJson: true,
+      noWarnings: true,
+
+      flatPlaylist: true,
+      skipDownload: true,
+    }) as Parameters<typeof youtubeDl>[1],
+  );
 
   const data = output as Record<string, unknown>;
   const entries = (data.entries as Record<string, unknown>[] | undefined) ?? [];
@@ -163,7 +192,9 @@ export async function getPlaylist(url: string): Promise<PlaylistInfo> {
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 function pickThumbnail(thumbnails: unknown): string | null {
-  if (!Array.isArray(thumbnails) || thumbnails.length === 0) return null;
+  if (!Array.isArray(thumbnails) || thumbnails.length === 0) {
+    return null;
+  }
   const best = thumbnails[thumbnails.length - 1] as Record<string, unknown>;
   return typeof best.url === 'string' ? best.url : null;
 }
@@ -171,7 +202,9 @@ function pickThumbnail(thumbnails: unknown): string | null {
 function parseThumbnails(
   thumbnails: unknown,
 ): { url: string; width: number | null; height: number | null }[] {
-  if (!Array.isArray(thumbnails)) return [];
+  if (!Array.isArray(thumbnails)) {
+    return [];
+  }
   return thumbnails.map((t) => {
     const thumb = t as Record<string, unknown>;
     return {
@@ -183,7 +216,9 @@ function parseThumbnails(
 }
 
 function parseStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
+  if (!Array.isArray(value)) {
+    return [];
+  }
   return value.filter((v): v is string => typeof v === 'string');
 }
 
@@ -192,7 +227,8 @@ function resolveContainer(
   formats?: Record<string, unknown>[],
 ): string | null {
   const ext =
-    (formats?.[0]?.ext as string | undefined) ?? (data.ext as string | undefined);
+    (formats?.[0]?.ext as string | undefined) ??
+    (data.ext as string | undefined);
   return ext ?? null;
 }
 
@@ -203,6 +239,8 @@ function resolveCodec(
   const acodec =
     (formats?.[0]?.acodec as string | undefined) ??
     (data.acodec as string | undefined);
-  if (!acodec || acodec === 'none') return null;
+  if (!acodec || acodec === 'none') {
+    return null;
+  }
   return acodec;
 }
