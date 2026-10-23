@@ -126,9 +126,9 @@ export async function getStream(urlOrId: string): Promise<StreamInfo> {
     skipDownload: true,
     format: formatString,
     // Bypass age-gate / bot detection without a browser
-    extractor_args: 'youtube:player_client=android',
+    extractorArgs: 'youtube:player_client=android',
     // Do not abort on minor errors (e.g. geo-restricted subtitle tracks)
-    ignorErrors: true,
+    ignoreErrors: true,
   };
 
   try {

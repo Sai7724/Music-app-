@@ -1,6 +1,6 @@
 /**
  * Stream API client — talks to the Node.js multi-source backend on Render.
- * Sources: YouTube (yt-dlp + Piped), JioSaavn, SoundCloud
+ * Sources: YouTube (yt-dlp + Piped)
  */
 
 const BASE_URL = import.meta.env.VITE_STREAM_SERVER_URL ?? '';
@@ -13,12 +13,12 @@ if (!BASE_URL) {
 
 /** A search result from any source — provider is encoded in id as "provider:id" */
 export type SearchResult = {
-  id: string; // e.g. "youtube:dQw4w9WgXcQ" | "jiosaavn:abc" | "soundcloud:123"
+  id: string; // e.g. "youtube:dQw4w9WgXcQ"
   title: string;
   duration: number | null; // seconds
   thumbnail: string | null;
   artist: string | null;
-  provider: 'youtube' | 'jiosaavn' | 'soundcloud';
+  provider: 'youtube';
 };
 
 export type StreamInfo = {
@@ -49,7 +49,7 @@ async function apiFetch<T>(path: string): Promise<T> {
 // ── Public API ────────────────────────────────────────────────────────────────
 
 /**
- * Search all sources (YouTube, JioSaavn, SoundCloud) in parallel.
+ * Search all sources (YouTube) in parallel.
  * Returns merged results — no source labels visible to the user.
  */
 export async function ytdlpSearch(

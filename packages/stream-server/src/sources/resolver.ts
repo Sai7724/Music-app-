@@ -13,7 +13,6 @@ import {
   search as ytdlpSearch,
 } from '../ytdlp.js';
 import { searchPiped, streamPiped } from './piped.js';
-import { searchSoundCloud, streamSoundCloud } from './soundcloud.js';
 import type { SearchResult, StreamInfo } from './types.js';
 
 // ── Search ────────────────────────────────────────────────────────────────────
@@ -29,7 +28,7 @@ export async function searchAll(
 ): Promise<SearchResult[]> {
   const perSource = Math.ceil(limit / 2);
 
-  const [ytResults, scResults, pipedResults] = await Promise.allSettled([
+  const [ytResults, pipedResults] = await Promise.allSettled([
     // yt-dlp (most comprehensive)
     ytdlpSearch(query, perSource).then((r) =>
       r.map((item) => ({
@@ -41,8 +40,6 @@ export async function searchAll(
         provider: 'youtube' as const,
       })),
     ),
-    // SoundCloud (indie/remixes)
-    searchSoundCloud(query, Math.floor(perSource / 2)),
     // Invidious/Piped as YouTube fallback
     searchPiped(query, perSource),
   ]);
@@ -63,20 +60,10 @@ export async function searchAll(
     }
   }
 
-  // SoundCloud
-  if (scResults.status === 'fulfilled') {
-    for (const r of scResults.value) {
-      if (!isDuplicate(r, all)) {
-        all.push(r);
-      }
-    }
-  }
-
   console.log(
     `[search] "${query}" → ${all.length} results`,
     `(yt: ${ytResults.status === 'fulfilled' ? ytResults.value.length : 'err'},`,
-    `piped: ${pipedResults.status === 'fulfilled' ? pipedResults.value.length : 'err'},`,
-    `sc: ${scResults.status === 'fulfilled' ? scResults.value.length : 'err'})`,
+    `piped: ${pipedResults.status === 'fulfilled' ? pipedResults.value.length : 'err'})`,
   );
 
   return all.slice(0, limit);
@@ -91,17 +78,9 @@ export async function searchAll(
  * For YouTube IDs, tries in order:
  *   1. Invidious/Piped (no bot detection)
  *   2. yt-dlp android client (bypasses age-gate on cloud)
- *   3. SoundCloud title-match (last resort, when title is provided)
  */
-export async function resolveStream(
-  compositeId: string,
-  title?: string,
-): Promise<StreamInfo> {
+export async function resolveStream(compositeId: string): Promise<StreamInfo> {
   const [provider, id] = compositeId.split(':');
-
-  if (provider === 'soundcloud') {
-    return streamSoundCloud(id);
-  }
 
   if (provider === 'youtube') {
     // Try in priority order — first success wins
@@ -121,40 +100,8 @@ export async function resolveStream(
       },
     ];
 
-    // JioSaavn cross-source match (no YouTube bot detection)
-    if (title) {
-      strategies.unshift({
-        name: 'jiosaavn',
-        fn: async () => {
-          const results = await searchJioSaavn(title, 1);
-          const first = results[0];
-          if (!first) {
-            throw new Error('No JioSaavn match');
-          }
-          const saavnId = first.id.replace('jiosaavn:', '');
-          return streamJioSaavn(saavnId);
-        },
-      });
-    }
-
-    // SoundCloud title-match as last resort when title is available
-    if (title) {
-      strategies.push({
-        name: 'soundcloud',
-        fn: async () => {
-          const results = await searchSoundCloud(title, 1);
-          const first = results[0];
-          if (!first) {
-            throw new Error('No SoundCloud match');
-          }
-          const scId = first.id.replace('soundcloud:', '');
-          return streamSoundCloud(scId);
-        },
-      });
-    }
-
     let lastError: Error | null = null;
-    let primaryError: Error | null = null; // Track error from primary sources (not fallbacks)
+    let primaryError: Error | null = null; // Track error from primary sources
 
     for (const { name, fn } of strategies) {
       try {
@@ -175,10 +122,8 @@ export async function resolveStream(
           `[stream] strategy failed for ${compositeId}: ${name}:`,
           lastError.message,
         );
-        // Track primary source errors (not fallbacks like SoundCloud)
-        if (name !== 'soundcloud' && name !== 'jiosaavn') {
-          primaryError = lastError;
-        }
+        // Track primary source errors
+        primaryError = lastError;
         continue;
       }
     }
