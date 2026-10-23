@@ -16,10 +16,14 @@ const INVIDIOUS_INSTANCES = [
   'https://inv.nadeko.net',
   'https://invidious.perennialte.ch',
   'https://invidious.io.lol',
+  'https://invidious.nerdvpn.de',
+  'https://iv.datura.network',
+  'https://invidious.privacyredirect.com',
+  'https://inv.tux.pizza',
 ];
 
 // Timeout per individual instance fetch (ms)
-const INSTANCE_TIMEOUT_MS = 3000;
+const INSTANCE_TIMEOUT_MS = 5000;
 
 /**
  * Race all instances — return the first successful response.

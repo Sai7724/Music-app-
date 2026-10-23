@@ -111,22 +111,20 @@ export async function getStream(urlOrId: string): Promise<StreamInfo> {
 
   console.log('[ytdlp] Getting stream for:', url);
 
-  // Format preference order:
-  //   1. opus in webm (best for streaming, no transcode needed)
-  //   2. m4a (broad device support)
-  //   3. any best audio
-  //   4. best overall as last resort
-  const formatString =
-    'bestaudio[ext=webm][acodec=opus]/bestaudio[ext=m4a]/bestaudio/best';
-
   // Multi-tier fallback strategy:
   // 1. If cookies are configured in env, try with cookies.
-  // 2. If cookies fail (common when YOUTUBE_COOKIES env var has expired session,
-  //    causing YouTube to return "The page needs to be reloaded"), retry cleanly without cookies.
+  // 2. If cookies fail (common when YOUTUBE_COOKIES env var has expired session),
+  //    retry cleanly without cookies.
   // 3. Retry with android client profile (bypasses web bot checks without cookies).
   // 4. Retry with ios client profile.
-  // 5. Retry with relaxed format 'bestaudio/best'.
-  const attempts: Array<{ name: string; opts: Record<string, unknown> }> = [];
+  // 5. Retry with embed URL (often bypasses bot detection).
+  // 6. Retry with mweb client profile.
+  // 7. Final fallback with relaxed format 'bestaudio/best'.
+  const attempts: Array<{
+    name: string;
+    opts: Record<string, unknown>;
+    url?: string;
+  }> = [];
 
   if (cookiesPath && existsSync(cookiesPath)) {
     attempts.push({
@@ -136,7 +134,7 @@ export async function getStream(urlOrId: string): Promise<StreamInfo> {
         noWarnings: true,
         preferFreeFormats: true,
         skipDownload: true,
-        format: formatString,
+        format: 'bestaudio/best',
         ignoreErrors: true,
         cookies: cookiesPath,
       },
@@ -151,7 +149,7 @@ export async function getStream(urlOrId: string): Promise<StreamInfo> {
         noWarnings: true,
         preferFreeFormats: true,
         skipDownload: true,
-        format: formatString,
+        format: 'bestaudio/best',
         ignoreErrors: true,
       },
     },
@@ -179,15 +177,40 @@ export async function getStream(urlOrId: string): Promise<StreamInfo> {
         ignoreErrors: true,
       },
     },
+    {
+      name: 'embed-url',
+      url: url.replace('watch?v=', 'embed/'),
+      opts: {
+        dumpSingleJson: true,
+        noWarnings: true,
+        preferFreeFormats: true,
+        skipDownload: true,
+        format: 'bestaudio/best',
+        ignoreErrors: true,
+      },
+    },
+    {
+      name: 'mweb-client',
+      opts: {
+        dumpSingleJson: true,
+        noWarnings: true,
+        preferFreeFormats: true,
+        skipDownload: true,
+        format: 'bestaudio/best',
+        extractorArgs: 'youtube:player_client=mweb',
+        ignoreErrors: true,
+      },
+    },
   );
 
   let lastError: Error | null = null;
 
   for (const attempt of attempts) {
     try {
-      console.log(`[ytdlp] Trying ${attempt.name} for:`, url);
+      const targetUrl = attempt.url ?? url;
+      console.log(`[ytdlp] Trying ${attempt.name} for:`, targetUrl);
       const output = await youtubeDl(
-        url,
+        targetUrl,
         attempt.opts as Parameters<typeof youtubeDl>[1],
       );
 
