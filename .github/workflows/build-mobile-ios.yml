@@ -1,0 +1,119 @@
+name: Build iOS IPA
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'packages/mobile/**'
+      - 'packages/ui/**'
+      - 'packages/i18n/**'
+      - 'packages/model/**'
+      - 'packages/themes/**'
+      - 'packages/tailwind-config/**'
+      - '.github/workflows/build-mobile-ios.yml'
+  workflow_dispatch: # allows manual trigger from GitHub Actions tab
+
+jobs:
+  build-ios:
+    runs-on: macos-latest
+
+    steps:
+      # ── 1. Checkout ────────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. Node.js + pnpm ─────────────────────────────────────────────────
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.node-version'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - name: Get pnpm store path
+        id: pnpm-cache
+        run: echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_OUTPUT
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # ── 3. Build web app ───────────────────────────────────────────────────
+      - name: Build mobile web app
+        working-directory: packages/mobile
+        env:
+          # Point to a public stream server or leave empty for offline build
+          VITE_STREAM_SERVER_URL: ${{ secrets.VITE_STREAM_SERVER_URL || '' }}
+        run: pnpm build
+
+      # ── 4. Capacitor iOS ───────────────────────────────────────────────────
+      - name: Add iOS platform (if not present)
+        working-directory: packages/mobile
+        run: |
+          if [ ! -d "ios" ]; then
+            npx cap add ios
+          else
+            echo "iOS platform already exists, skipping add"
+          fi
+
+      - name: Sync Capacitor iOS
+        working-directory: packages/mobile
+        run: npx cap sync ios
+
+      # ── 5. Xcode build (unsigned IPA) ─────────────────────────────────────
+      - name: Select latest Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app
+
+      - name: Build unsigned IPA with xcodebuild
+        working-directory: packages/mobile/ios/App
+        run: |
+          xcodebuild \
+            -workspace App.xcworkspace \
+            -scheme App \
+            -configuration Debug \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            PROVISIONING_PROFILE="" \
+            | xcpretty || true
+
+          # Package the .app into an IPA
+          mkdir -p build/ipa/Payload
+          cp -R "$(find build -name '*.app' | head -1)" build/ipa/Payload/
+          cd build/ipa
+          zip -r ../Nuclear.ipa Payload
+          echo "IPA created at packages/mobile/ios/App/build/Nuclear.ipa"
+
+      # ── 6. Upload IPA artifact ─────────────────────────────────────────────
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: Nuclear-iOS-${{ github.sha }}
+          path: packages/mobile/ios/App/build/Nuclear.ipa
+          retention-days: 14
+
+      # ── 7. Summary ─────────────────────────────────────────────────────────
+      - name: Build summary
+        run: |
+          echo "## iOS Build Complete ✅" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**IPA artifact:** Nuclear-iOS-${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### How to install" >> $GITHUB_STEP_SUMMARY
+          echo "1. Download the IPA from the Artifacts section above" >> $GITHUB_STEP_SUMMARY
+          echo "2. Plug your iPhone into your PC" >> $GITHUB_STEP_SUMMARY
+          echo "3. Open iloader → Sign in with Apple ID → Import IPA" >> $GITHUB_STEP_SUMMARY

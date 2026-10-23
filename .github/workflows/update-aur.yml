@@ -1,0 +1,49 @@
+name: Update AUR
+
+on:
+  workflow_run:
+    workflows: ["Release Player"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish (e.g., 1.23.2)"
+        required: true
+      pkgrel:
+        description: "AUR package release; bump it to republish the same version with packaging changes"
+        required: true
+        default: "1"
+
+jobs:
+  update-bin:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+
+    steps:
+      - name: Install dependencies
+        run: pacman -Syu --noconfirm base-devel git openssh curl
+
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Install SSH key
+        uses: shimataro/ssh-key-action@v2
+        with:
+          key: ${{ secrets.AUR_SSH_KEY }}
+          known_hosts: ${{ secrets.AUR_KNOWN_HOSTS }}
+
+      - name: Update nuclear-player-bin
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            VERSION="${{ github.event.inputs.version }}"
+            PKGREL="${{ github.event.inputs.pkgrel }}"
+          else
+            TAG="${{ github.event.workflow_run.head_branch }}"
+            VERSION="${TAG#player@}"
+            PKGREL=1
+          fi
+          ./aur/update-aur.sh --version "${VERSION}" --pkgrel "${PKGREL}"
