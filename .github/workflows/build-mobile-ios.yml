@@ -68,6 +68,21 @@ jobs:
             echo "iOS platform already exists, skipping add"
           fi
 
+      - name: Generate app icons (Nuclear logo → all iOS sizes)
+        working-directory: packages/mobile
+        run: |
+          # Copy the Nuclear icon as source asset
+          mkdir -p assets
+          cp ../player/src-tauri/icons/icon.png assets/icon.png
+          # Generate all iOS icon sizes
+          npm install --platform=linux --arch=x64 sharp 2>/dev/null || true
+          npx @capacitor/assets generate \
+            --iconBackgroundColor '#0f0f10' \
+            --iconBackgroundColorDark '#0f0f10' \
+            --splashBackgroundColor '#0f0f10' \
+            --splashBackgroundColorDark '#0f0f10' \
+            --ios || echo "Icon generation skipped, using defaults"
+
       - name: Sync Capacitor iOS
         working-directory: packages/mobile
         run: npx cap sync ios

@@ -38,6 +38,11 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok', version: '1.0.0' });
 });
 
+// Debug endpoint — check raw query params
+app.get('/debug', (req, res) => {
+  res.json({ query: req.query, headers: req.headers });
+});
+
 // API routes
 app.use('/api/search', searchRouter);
 app.use('/api/stream', streamRouter);
@@ -50,6 +55,7 @@ app.use((_req, res) => {
 });
 
 // Global error handler
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error('Unhandled error:', err.message);
   res.status(500).json({ error: 'Internal server error' });

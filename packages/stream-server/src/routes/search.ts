@@ -12,8 +12,12 @@ const querySchema = z.object({
 });
 
 searchRouter.get('/', apiLimiter, async (req, res) => {
+  // Log for debugging on Render
+  console.log('[search] query:', JSON.stringify(req.query));
+
   const parsed = querySchema.safeParse(req.query);
   if (!parsed.success) {
+    console.error('[search] validation failed:', parsed.error.flatten());
     res.status(400).json({ error: parsed.error.flatten().fieldErrors });
     return;
   }
@@ -22,7 +26,7 @@ searchRouter.get('/', apiLimiter, async (req, res) => {
     const results = await search(parsed.data.q, parsed.data.limit);
     res.json(results);
   } catch (err) {
-    console.error('Search error:', err);
-    res.status(500).json({ error: 'Search failed' });
+    console.error('[search] error:', err);
+    res.status(500).json({ error: 'Search failed', detail: String(err) });
   }
 });
